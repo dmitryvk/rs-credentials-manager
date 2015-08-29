@@ -1,0 +1,7 @@
+[package]
+name = "cred-man"
+version = "0.1.0"
+authors = ["Dmitry Kalyanov <Kalyanov.Dmitry@gmail.com>"]
+
+[dependencies]
+linenoise-rust = "0.1.12"
