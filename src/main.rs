@@ -9,9 +9,16 @@
 //! 
 
 extern crate linenoise;
+extern crate rustc_serialize;
 
 use std::cmp;
 use std::collections::BTreeMap;
+use std::io;
+use std::io::Write;
+use rustc_serialize::json;
+use std::io::Read;
+use std::fs;
+use std::path::PathBuf;
 
 static CORRECT_PASSWORD: &'static str = "123";
 
@@ -47,6 +54,17 @@ struct Db {
     data: BTreeMap<String, DbRecord>,
 }
 
+#[derive(RustcDecodable, RustcEncodable, Debug)]
+struct DbDTO {
+    records: Vec<DbRecordDTO>
+}
+
+#[derive(RustcDecodable, RustcEncodable, Debug)]
+struct DbRecordDTO {
+    key: String,
+    value: String,
+}
+
 fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
     match cmd {
         "help" => Some(help_cmd),
@@ -63,6 +81,7 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     println!(" help");
     println!(" quit");
     println!(" add");
+    println!(" get");
     println!(" list");
     true
 }
@@ -80,6 +99,7 @@ fn add_cmd(db: &mut Db, _: &str, _: &str) -> bool {
                     let rec = DbRecord { key: key.clone(), value: val };
                     db.data.insert(key, rec);
                     println!("now storing {:} keys", db.data.len());
+                    save_db(db).unwrap();
                 }
             }
         }
@@ -121,11 +141,86 @@ fn execute_cmd(db: &mut Db, cmd_line: &str) -> bool {
     }
 }
 
+enum PathKind {
+    Main,
+    Temp,
+    Backup,
+}
+
+fn get_db_path(kind: PathKind) -> PathBuf {
+    let mut path = std::env::home_dir().unwrap();
+    path.push(".local");
+    path.push("share");
+    path.push("cred-man");
+    std::fs::create_dir_all(&path);
+    path.push(match kind {
+        PathKind::Main => "keys.db",
+        PathKind::Temp => "keys.tmp.db",
+        PathKind::Backup => "keys.backup.db",
+    });
+    path
+}
+
+fn load_db(db: &mut Db) -> io::Result<()> {
+    let path = get_db_path(PathKind::Main);
+    match fs::File::open(&path) {
+        Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
+            println!("Path {} not found", path.to_string_lossy());
+            Ok(())
+        },
+        Err(e) => Err(e),
+        Ok(mut f) => {
+            let mut contents = "".to_string();
+            try!(f.read_to_string(&mut contents));
+            let dto: DbDTO = json::decode(&contents).unwrap();
+            println!("db = {:#?}", dto);
+            for r in dto.records.into_iter() {
+                let k = r.key.clone();
+                db.data.insert(k, DbRecord {
+                    key: r.key,
+                    value: r.value,
+                });
+            }
+            Ok(())
+        }
+    }
+}
+
+fn save_db(db: &mut Db) -> io::Result<()> {
+    try!(fs::copy(
+        get_db_path(PathKind::Main),
+        get_db_path(PathKind::Backup)));
+    match fs::File::create(get_db_path(PathKind::Temp)) {
+        Err(e) => Err(e),
+        Ok(mut f) => {
+            let mut dto = DbDTO {
+                records: Vec::new()
+            };
+            for r in db.data.values() {
+                dto.records.push(DbRecordDTO {
+                    key: r.key.clone(),
+                    value: r.value.clone(),
+                });
+            }
+            let mut contents = json::encode(&dto).unwrap();
+            try!(f.write_all(contents.as_bytes()));
+            try!(fs::rename(
+                get_db_path(PathKind::Temp),
+                get_db_path(PathKind::Main)));
+            Ok(())
+        }
+    }
+}
+
 fn main() {
     if !authenticate() {
         return;
     }
     let mut db = Db { data: BTreeMap::new() };
+    match load_db(&mut db) {
+        Ok(_) => { println!("loaded"); }
+        Err(e) => { println!("error: {:?}", e); panic!(); }
+    }
     while let Some(cmd) = linenoise::input("> ") {
         if cmd.len() > 0 {
             if !execute_cmd(&mut db, &cmd) {
