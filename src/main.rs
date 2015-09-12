@@ -74,6 +74,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
         "get" => Some(get_cmd),
         "list" => Some(list_cmd),
         "find" => Some(find_cmd),
+        "del" => Some(del_cmd),
         _ => None
     }
 }
@@ -86,6 +87,7 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     println!(" get");
     println!(" list");
     println!(" find");
+    println!(" del");
     true
 }
 
@@ -93,18 +95,73 @@ fn quit_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     false
 }
 
-fn add_cmd(db: &mut Db, _: &str, _: &str) -> bool {
-    if let Some(key) = linenoise::input("new key: ") {
+
+fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+    let arg = match rest_line {
+        x if x != "" => Some(x.to_string()),
+        _ => linenoise::input("Key: ")
+    };
+    if let Some(key) = arg {
         if key.len() > 0 {
-            if let Some(val) = linenoise::input(&format!("value for {:}: ", key)) {
-                if val.len() > 0 {
-                    println!("inserting '{:}' => '{:}'", key, val);
-                    let rec = DbRecord { key: key.clone(), value: vec![("data".to_string(), val)] };
-                    db.data.insert(key, rec);
-                    println!("now storing {:} keys", db.data.len());
+            match db.data.remove(&key) {
+                Some(_) => {
                     save_db(db).unwrap();
+                    println!("Removed '{:}'", key);
+                },
+                None => {
+                    println!("There is no key '{:}'", key);
                 }
             }
+        }
+    }
+    true
+}
+
+enum KvResult {
+    Done,
+    None,
+    Some { key: String, val: String },
+}
+
+fn get_kv() -> KvResult {
+    match linenoise::input("  data key: ").map(|s| s.trim().to_string()) {
+        None => KvResult::Done,
+        Some(key) => {
+            match key {
+                ref x if x == "" => KvResult::Done,
+                key => {
+                    match linenoise::input(&format!("    value for {:}: ", key)) {
+                        Some(ref x) if x == "" => KvResult::None,
+                        Some(x) => KvResult::Some { key: key, val: x },
+                        None => KvResult::None,
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+    let arg = match rest_line {
+        x if x != "" => Some(x.to_string()),
+        _ => linenoise::input("new key: ")
+    };
+    if let Some(key) = arg {
+        if key.len() > 0 {
+            let mut rec = DbRecord { key: key.clone(), value: Vec::new() };
+            loop {
+                match get_kv() {
+                    KvResult::Done => { break; },
+                    KvResult::None => { },
+                    KvResult::Some { key, val } => {
+                        rec.value.push((key, val));
+                    }
+                }
+            }
+            println!("inserting '{:}'", key);
+            db.data.insert(key, rec);
+            println!("now storing {:} keys", db.data.len());
+            save_db(db).unwrap();
         }
     }
     true
@@ -200,7 +257,7 @@ fn load_db(db: &mut Db) -> io::Result<()> {
             let mut contents = "".to_string();
             try!(f.read_to_string(&mut contents));
             let dto: DbDTO = json::decode(&contents).unwrap();
-            println!("db = {:#?}", dto);
+            //println!("db = {:#?}", dto);
             for r in dto.records.into_iter() {
                 let k = r.key.clone();
                 db.data.insert(k, DbRecord {
