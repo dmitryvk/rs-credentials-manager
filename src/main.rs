@@ -189,8 +189,6 @@ fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
                     for z in &val.value {
                         println!("{:}: {:}", z.0, z.1);
                     }
-                    linenoise::input("press Return to clear screen...");
-                    linenoise::clear_screen();
                 }
             }
         }
