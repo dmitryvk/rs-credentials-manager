@@ -130,10 +130,16 @@ fn get_kv() -> KvResult {
             match key {
                 ref x if x == "" => KvResult::Done,
                 key => {
-                    match linenoise::input(&format!("    value for {:}: ", key)) {
-                        Some(ref x) if x == "" => KvResult::None,
-                        Some(x) => KvResult::Some { key: key, val: x },
-                        None => KvResult::None,
+                    let parts: Vec<_> = key.splitn(2, ' ').map(|s| s.trim().to_string()).collect();
+                    let real_key = parts[0].clone();
+                    if parts.len() == 2 {
+                        KvResult::Some { key: real_key, val: parts[1].clone() }
+                    } else {
+                        match linenoise::input(&format!("    value for {:}: ", key)) {
+                            Some(ref x) if x == "" => KvResult::None,
+                            Some(x) => KvResult::Some { key: key, val: x },
+                            None => KvResult::None,
+                        }
                     }
                 }
             }
@@ -183,6 +189,8 @@ fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
                     for z in &val.value {
                         println!("{:}: {:}", z.0, z.1);
                     }
+                    linenoise::input("press Return to clear screen...");
+                    linenoise::clear_screen();
                 }
             }
         }
