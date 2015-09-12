@@ -41,13 +41,14 @@ fn authenticate() -> bool {
 fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
     let idx = cmd_line.find(' ').unwrap_or(cmd_line.len());
     let cmd = unsafe { cmd_line.slice_unchecked(0, idx) };
-    let rest = unsafe { cmd_line.slice_unchecked(cmp::min(cmd_line.len(), idx + 1), cmd_line.len()) };
+    let rest = unsafe { cmd_line.slice_unchecked(cmp::min(cmd_line.len(), idx + 1), cmd_line.len()) }.trim();
+    //println!("cmd = {:?} rest = {:?}", cmd, rest);
     (cmd, rest)
 }
 
 struct DbRecord {
     key: String,
-    value: String,
+    value: Vec<(String, String)>,
 }
 
 struct Db {
@@ -62,7 +63,7 @@ struct DbDTO {
 #[derive(RustcDecodable, RustcEncodable, Debug)]
 struct DbRecordDTO {
     key: String,
-    value: String,
+    value: Vec<(String, String)>,
 }
 
 fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
@@ -72,6 +73,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
         "add" => Some(add_cmd),
         "get" => Some(get_cmd),
         "list" => Some(list_cmd),
+        "find" => Some(find_cmd),
         _ => None
     }
 }
@@ -83,6 +85,7 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     println!(" add");
     println!(" get");
     println!(" list");
+    println!(" find");
     true
 }
 
@@ -96,7 +99,7 @@ fn add_cmd(db: &mut Db, _: &str, _: &str) -> bool {
             if let Some(val) = linenoise::input(&format!("value for {:}: ", key)) {
                 if val.len() > 0 {
                     println!("inserting '{:}' => '{:}'", key, val);
-                    let rec = DbRecord { key: key.clone(), value: val };
+                    let rec = DbRecord { key: key.clone(), value: vec![("data".to_string(), val)] };
                     db.data.insert(key, rec);
                     println!("now storing {:} keys", db.data.len());
                     save_db(db).unwrap();
@@ -107,15 +110,39 @@ fn add_cmd(db: &mut Db, _: &str, _: &str) -> bool {
     true
 }
 
-fn get_cmd(db: &mut Db, _: &str, _: &str) -> bool {
-    if let Some(key) = linenoise::input("find key: ") {
+fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+    let arg = match rest_line {
+        x if x != "" => Some(x.to_string()),
+        _ => linenoise::input("find key: ")
+    };
+    if let Some(key) = arg {
         if key.len() > 0 {
             match db.data.get(&key) {
                 None => {
                     println!("there is no match for {:}", &key);
                 }
                 Some(val) => {
-                    println!("the value is:\n{:}", val.value);
+                    println!("Data:");
+                    for z in &val.value {
+                        println!("{:}: {:}", z.0, z.1);
+                    }
+                }
+            }
+        }
+    }
+    true
+}
+
+fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+    let arg = match rest_line {
+        x if x != "" => Some(x.to_string()),
+        _ => linenoise::input("find key: ")
+    };
+    if let Some(key) = arg {
+        if key.len() > 0 {
+            for db_key in db.data.keys() {
+                if db_key.contains(&key) {
+                    println!("{:}", db_key);
                 }
             }
         }
@@ -152,7 +179,7 @@ fn get_db_path(kind: PathKind) -> PathBuf {
     path.push(".local");
     path.push("share");
     path.push("cred-man");
-    std::fs::create_dir_all(&path);
+    std::fs::create_dir_all(&path).unwrap();
     path.push(match kind {
         PathKind::Main => "keys.db",
         PathKind::Temp => "keys.tmp.db",
@@ -187,10 +214,19 @@ fn load_db(db: &mut Db) -> io::Result<()> {
 }
 
 fn save_db(db: &mut Db) -> io::Result<()> {
-    try!(fs::copy(
-        get_db_path(PathKind::Main),
-        get_db_path(PathKind::Backup)));
-    match fs::File::create(get_db_path(PathKind::Temp)) {
+    let main_path = get_db_path(PathKind::Main);
+    let backup_path = get_db_path(PathKind::Backup);
+    let temp_path = get_db_path(PathKind::Temp);
+    match fs::metadata(&main_path) {
+        Ok(_) => {
+            try!(fs::copy(&main_path, &backup_path));
+        },
+        Err(ref e) if e.kind() == io::ErrorKind::NotFound => (),
+        Err(e) => {
+            return Err(e);
+        },
+    };
+    match fs::File::create(&temp_path) {
         Err(e) => Err(e),
         Ok(mut f) => {
             let mut dto = DbDTO {
@@ -202,11 +238,9 @@ fn save_db(db: &mut Db) -> io::Result<()> {
                     value: r.value.clone(),
                 });
             }
-            let mut contents = json::encode(&dto).unwrap();
+            let contents = json::encode(&dto).unwrap();
             try!(f.write_all(contents.as_bytes()));
-            try!(fs::rename(
-                get_db_path(PathKind::Temp),
-                get_db_path(PathKind::Main)));
+            try!(fs::rename(&temp_path, &main_path));
             Ok(())
         }
     }
