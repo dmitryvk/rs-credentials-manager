@@ -21,7 +21,7 @@ pub fn generate_salt<T>(rng: &mut T, n: usize) -> Vec<u8>
 
 pub fn derive_key(salt: &[u8], password: &str) -> Vec<u8> {
     let mut result = vec![0u8; 32];
-    scrypt(password.as_bytes(), salt, &ScryptParams::new(10, 8, 1), &mut result);
+    scrypt(password.as_bytes(), salt, &ScryptParams::new(14, 8, 1), &mut result);
     result
 }
 
@@ -99,7 +99,7 @@ pub fn decrypt(data: &EncryptedFileContent, password: &str) -> Option<String> {
     let aad = b"cred-man";
 
     let mut deciphered = vec![0u8; data.ciphertext.len()];
-    
+
     let success = AesGcm::new(KeySize::KeySize256, &key, &data.nonce, aad)
         .decrypt(&data.ciphertext, &mut deciphered, &data.tag);
 

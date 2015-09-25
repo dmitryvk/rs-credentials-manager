@@ -18,7 +18,7 @@ use std::io;
 use rustc_serialize::json;
 use std::fs;
 use std::path::PathBuf;
-use std::io::Write;
+use std::io::{Read,Write};
 
 mod encrypted_file;
 
@@ -32,7 +32,7 @@ fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
 
 struct DbRecord {
     key: String,
-    value: Vec<(String, String)>,
+    value: BTreeMap<String, String>,
 }
 
 struct Db {
@@ -41,14 +41,9 @@ struct Db {
 }
 
 #[derive(RustcDecodable, RustcEncodable, Debug)]
-struct DbDTO {
-    records: Vec<DbRecordDTO>
-}
-
-#[derive(RustcDecodable, RustcEncodable, Debug)]
 struct DbRecordDTO {
     key: String,
-    value: Vec<(String, String)>,
+    value: BTreeMap<String, String>,
 }
 
 fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
@@ -61,6 +56,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
         "find" => Some(find_cmd),
         "del" => Some(del_cmd),
         "dump" => Some(dump_cmd),
+        "import" => Some(import_cmd),
         _ => None
     }
 }
@@ -75,6 +71,7 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     println!(" find");
     println!(" del");
     println!(" dump");
+    println!(" import");
     true
 }
 
@@ -141,19 +138,23 @@ fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     };
     if let Some(key) = arg {
         if key.len() > 0 {
-            let mut rec = DbRecord { key: key.clone(), value: Vec::new() };
+            let mut rec = DbRecord {
+                key: key.clone(),
+                value: BTreeMap::new()
+            };
             loop {
                 match get_kv() {
                     KvResult::Done => { break; },
                     KvResult::None => { },
                     KvResult::Some { key, val } => {
-                        rec.value.push((key, val));
+                        rec.value.insert(key.clone(), val);
                     }
                 }
             }
-            println!("inserting '{:}'", key);
-            db.data.insert(key, rec);
-            println!("now storing {:} keys", db.data.len());
+            db.data.insert(key.clone(), rec);
+            println!("inserted '{}', now storing {} keys",
+                     key,
+                     db.data.len());
             save_db(db).unwrap();
         }
     }
@@ -165,11 +166,9 @@ fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         x if x != "" => Box::new(std::fs::File::create(&x).unwrap()),
         _ => Box::new(std::io::stdout()),
     };
-    let mut dto = DbDTO {
-        records: Vec::new()
-    };
+    let mut dto = Vec::new();
     for r in db.data.values() {
-        dto.records.push(DbRecordDTO {
+        dto.push(DbRecordDTO {
             key: r.key.clone(),
             value: r.value.clone(),
         });
@@ -178,6 +177,41 @@ fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     out.write_all(contents.as_bytes()).unwrap();
     out.write_all(b"\n").unwrap();
     out.flush().unwrap();
+    
+    true
+}
+
+fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
+    let mut contents = String::new();
+    let mut f = try!(std::fs::File::open(file_name));
+    try!(f.read_to_string(&mut contents));
+    let dto: Vec<DbRecordDTO> = json::decode(&contents).unwrap();
+    for r in dto {
+        let v = DbRecord {
+            key: r.key,
+            value: r.value,
+        };
+        let k = v.key.clone();
+        db.data.insert(k, v);
+    }
+
+    save_db(db).unwrap();
+
+    Ok(())
+}
+
+fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+    let filename = match rest_line {
+        x if x != "" => x.trim().to_string(),
+        _ => linenoise::input("Enter filename: ").unwrap(),
+    };
+
+    match import_from(db, &filename) {
+        Ok(()) => { },
+        Err(e) => {
+            println!("Error: {:?}", e);
+        }
+    }
     
     true
 }
@@ -263,6 +297,7 @@ fn get_db_path(kind: PathKind) -> PathBuf {
 fn load_db(db: &mut Db) -> io::Result<()> {
     let path = get_db_path(PathKind::Main);
     let password = linenoise::input("Enter password: ").unwrap();
+    linenoise::clear_screen();
     match fs::metadata(&path) {
         Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
             println!("Path {} not found", path.to_string_lossy());
@@ -275,12 +310,18 @@ fn load_db(db: &mut Db) -> io::Result<()> {
             match encrypted_file::decrypt(&data, &password) {
                 None => {
                     println!("Wrong password!");
-                    panic!();
+                    let ans = linenoise::input("Recreate db (yes/N)? ").unwrap();
+                    if ans.to_lowercase() == "yes" {
+                        db.password = password;
+                        Ok(())
+                    } else {
+                        panic!();
+                    }
                 },
                 Some(contents) => {
-                    let dto: DbDTO = json::decode(&contents).unwrap();
+                    let dto: Vec<DbRecordDTO> = json::decode(&contents).unwrap();
                     //println!("db = {:#?}", dto);
-                    for r in dto.records.into_iter() {
+                    for r in dto.into_iter() {
                         let k = r.key.clone();
                         db.data.insert(k, DbRecord {
                             key: r.key,
@@ -299,10 +340,10 @@ fn save_db(db: &mut Db) -> io::Result<()> {
     let main_path = get_db_path(PathKind::Main);
     let backup_path = get_db_path(PathKind::Backup);
     let temp_path = get_db_path(PathKind::Temp);
-    println!("main_path: {:?}", main_path);
+    //println!("main_path: {:?}", main_path);
     match fs::metadata(&main_path) {
         Ok(_) => {
-            println!("copy main to backup");
+            //println!("copy main to backup");
             try!(fs::copy(&main_path, &backup_path));
         },
         Err(ref e) if e.kind() == io::ErrorKind::NotFound => (),
@@ -310,21 +351,19 @@ fn save_db(db: &mut Db) -> io::Result<()> {
             return Err(e);
         },
     };
-    let mut dto = DbDTO {
-        records: Vec::new()
-    };
+    let mut dto: Vec<DbRecordDTO> = Vec::new();
     for r in db.data.values() {
-        dto.records.push(DbRecordDTO {
+        dto.push(DbRecordDTO {
             key: r.key.clone(),
             value: r.value.clone(),
         });
     }
     let contents = json::encode(&dto).unwrap();
-    println!("contents: {}", contents);
+    //println!("contents: {}", contents);
     let data = encrypted_file::encrypt(&contents, &db.password);
-    println!("encrypted");
+    //println!("encrypted");
     try!(encrypted_file::write_to_file(&temp_path, &data));
-    println!("wrote to {:?}", temp_path);
+    //println!("wrote to {:?}", temp_path);
     try!(fs::rename(&temp_path, &main_path));
     Ok(())
 }
