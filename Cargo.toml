@@ -7,3 +7,4 @@ authors = ["Dmitry Kalyanov <Kalyanov.Dmitry@gmail.com>"]
 linenoise-rust = "0.1.12"
 rustc-serialize = "0.3"
 rust-crypto = "*"
+rand = "*"

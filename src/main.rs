@@ -10,33 +10,17 @@
 
 extern crate linenoise;
 extern crate rustc_serialize;
+extern crate rand;
 
 use std::cmp;
 use std::collections::BTreeMap;
 use std::io;
-use std::io::Write;
 use rustc_serialize::json;
-use std::io::Read;
 use std::fs;
 use std::path::PathBuf;
+use std::io::Write;
 
-static CORRECT_PASSWORD: &'static str = "123";
-
-fn authenticate() -> bool {
-    let password = linenoise::input("Enter password: ");
-    match password {
-        None => { false }
-        Some(p) => {
-            if p == CORRECT_PASSWORD {
-                println!("OK");
-                true
-            } else {
-                println!("Wrong password");
-                false
-            }
-        }
-    }
-}
+mod encrypted_file;
 
 fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
     let idx = cmd_line.find(' ').unwrap_or(cmd_line.len());
@@ -53,6 +37,7 @@ struct DbRecord {
 
 struct Db {
     data: BTreeMap<String, DbRecord>,
+    password: String,
 }
 
 #[derive(RustcDecodable, RustcEncodable, Debug)]
@@ -75,6 +60,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
         "list" => Some(list_cmd),
         "find" => Some(find_cmd),
         "del" => Some(del_cmd),
+        "dump" => Some(dump_cmd),
         _ => None
     }
 }
@@ -88,6 +74,7 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     println!(" list");
     println!(" find");
     println!(" del");
+    println!(" dump");
     true
 }
 
@@ -173,6 +160,28 @@ fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     true
 }
 
+fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+    let mut out: Box<Write> = match rest_line {
+        x if x != "" => Box::new(std::fs::File::create(&x).unwrap()),
+        _ => Box::new(std::io::stdout()),
+    };
+    let mut dto = DbDTO {
+        records: Vec::new()
+    };
+    for r in db.data.values() {
+        dto.records.push(DbRecordDTO {
+            key: r.key.clone(),
+            value: r.value.clone(),
+        });
+    }
+    let contents = json::encode(&dto).unwrap();
+    out.write_all(contents.as_bytes()).unwrap();
+    out.write_all(b"\n").unwrap();
+    out.flush().unwrap();
+    
+    true
+}
+
 fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
@@ -253,25 +262,35 @@ fn get_db_path(kind: PathKind) -> PathBuf {
 
 fn load_db(db: &mut Db) -> io::Result<()> {
     let path = get_db_path(PathKind::Main);
-    match fs::File::open(&path) {
+    let password = linenoise::input("Enter password: ").unwrap();
+    match fs::metadata(&path) {
         Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
             println!("Path {} not found", path.to_string_lossy());
+            db.password = password;
             Ok(())
         },
         Err(e) => Err(e),
-        Ok(mut f) => {
-            let mut contents = "".to_string();
-            try!(f.read_to_string(&mut contents));
-            let dto: DbDTO = json::decode(&contents).unwrap();
-            //println!("db = {:#?}", dto);
-            for r in dto.records.into_iter() {
-                let k = r.key.clone();
-                db.data.insert(k, DbRecord {
-                    key: r.key,
-                    value: r.value,
-                });
+        Ok(_) => {
+            let data = try!(encrypted_file::parse_file(&path));
+            match encrypted_file::decrypt(&data, &password) {
+                None => {
+                    println!("Wrong password!");
+                    panic!();
+                },
+                Some(contents) => {
+                    let dto: DbDTO = json::decode(&contents).unwrap();
+                    //println!("db = {:#?}", dto);
+                    for r in dto.records.into_iter() {
+                        let k = r.key.clone();
+                        db.data.insert(k, DbRecord {
+                            key: r.key,
+                            value: r.value,
+                        });
+                    }
+                    db.password = password;
+                    Ok(())
+                }
             }
-            Ok(())
         }
     }
 }
@@ -280,8 +299,10 @@ fn save_db(db: &mut Db) -> io::Result<()> {
     let main_path = get_db_path(PathKind::Main);
     let backup_path = get_db_path(PathKind::Backup);
     let temp_path = get_db_path(PathKind::Temp);
+    println!("main_path: {:?}", main_path);
     match fs::metadata(&main_path) {
         Ok(_) => {
+            println!("copy main to backup");
             try!(fs::copy(&main_path, &backup_path));
         },
         Err(ref e) if e.kind() == io::ErrorKind::NotFound => (),
@@ -289,31 +310,27 @@ fn save_db(db: &mut Db) -> io::Result<()> {
             return Err(e);
         },
     };
-    match fs::File::create(&temp_path) {
-        Err(e) => Err(e),
-        Ok(mut f) => {
-            let mut dto = DbDTO {
-                records: Vec::new()
-            };
-            for r in db.data.values() {
-                dto.records.push(DbRecordDTO {
-                    key: r.key.clone(),
-                    value: r.value.clone(),
-                });
-            }
-            let contents = json::encode(&dto).unwrap();
-            try!(f.write_all(contents.as_bytes()));
-            try!(fs::rename(&temp_path, &main_path));
-            Ok(())
-        }
+    let mut dto = DbDTO {
+        records: Vec::new()
+    };
+    for r in db.data.values() {
+        dto.records.push(DbRecordDTO {
+            key: r.key.clone(),
+            value: r.value.clone(),
+        });
     }
+    let contents = json::encode(&dto).unwrap();
+    println!("contents: {}", contents);
+    let data = encrypted_file::encrypt(&contents, &db.password);
+    println!("encrypted");
+    try!(encrypted_file::write_to_file(&temp_path, &data));
+    println!("wrote to {:?}", temp_path);
+    try!(fs::rename(&temp_path, &main_path));
+    Ok(())
 }
 
 fn main() {
-    if !authenticate() {
-        return;
-    }
-    let mut db = Db { data: BTreeMap::new() };
+    let mut db = Db { data: BTreeMap::new(), password: String::new() };
     match load_db(&mut db) {
         Ok(_) => { println!("loaded"); }
         Err(e) => { println!("error: {:?}", e); panic!(); }
