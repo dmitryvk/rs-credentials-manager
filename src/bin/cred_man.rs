@@ -258,6 +258,7 @@ fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
                     println!("there is no match for {:}", &key);
                 }
                 Some(val) => {
+                    println!("Timestamp: {}", val.timestamp.format("%Y-%m-%d %H:%M:%S"));
                     println!("Data:");
                     for z in &val.value {
                         println!("{:}: {:}", z.0, z.1);
