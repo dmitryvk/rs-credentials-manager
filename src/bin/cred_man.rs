@@ -8,6 +8,7 @@
 //! Data is stored in ~/.local/share/credentials-manager (it's stored in clear for now).
 //! 
 
+extern crate cred_man_lib;
 extern crate linenoise;
 extern crate rustc_serialize;
 extern crate rand;
@@ -21,9 +22,9 @@ use std::fs;
 use std::path::PathBuf;
 use std::io::{Read,Write};
 use chrono::Local;
-
-mod encrypted_file;
-
+use chrono::naive::datetime::NaiveDateTime;
+use cred_man_lib::encrypted_file;
+    
 fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
     let idx = cmd_line.find(' ').unwrap_or(cmd_line.len());
     let cmd = unsafe { cmd_line.slice_unchecked(0, idx) };
@@ -34,6 +35,7 @@ fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
 
 struct DbRecord {
     key: String,
+    timestamp: NaiveDateTime,
     value: BTreeMap<String, String>,
 }
 
@@ -54,8 +56,11 @@ impl Db {
 #[derive(RustcDecodable, RustcEncodable, Debug)]
 struct DbRecordDTO {
     key: String,
+    timestamp: String,
     value: BTreeMap<String, String>,
 }
+
+const DTO_TIME_FORMAT: &'static str = "%Y-%m-%dT%H:%M:%S";
 
 fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
     match cmd {
@@ -157,6 +162,7 @@ fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         if key.len() > 0 {
             let mut rec = DbRecord {
                 key: key.clone(),
+                timestamp: Local::now().naive_local(),
                 value: BTreeMap::new()
             };
             loop {
@@ -187,6 +193,7 @@ fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     for r in db.data.values() {
         dto.push(DbRecordDTO {
             key: r.key.clone(),
+            timestamp: format!("{}", r.timestamp.format(DTO_TIME_FORMAT)),
             value: r.value.clone(),
         });
     }
@@ -206,6 +213,7 @@ fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
     for r in dto {
         let v = DbRecord {
             key: r.key,
+            timestamp: NaiveDateTime::parse_from_str(&r.timestamp, DTO_TIME_FORMAT).unwrap(),
             value: r.value,
         };
         let k = v.key.clone();
@@ -359,6 +367,7 @@ fn load_db() -> io::Result<DbLoadResult> {
                         let k = r.key.clone();
                         db.data.insert(k, DbRecord {
                             key: r.key,
+                            timestamp: NaiveDateTime::parse_from_str(&r.timestamp, DTO_TIME_FORMAT).unwrap(),
                             value: r.value,
                         });
                     }
@@ -389,6 +398,7 @@ fn save_db(db: &mut Db) -> io::Result<()> {
     for r in db.data.values() {
         dto.push(DbRecordDTO {
             key: r.key.clone(),
+            timestamp: format!("{}", r.timestamp.format(DTO_TIME_FORMAT)),
             value: r.value.clone(),
         });
     }
