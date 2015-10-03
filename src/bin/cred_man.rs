@@ -75,6 +75,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
         "dump" => Some(dump_cmd),
         "import" => Some(import_cmd),
         "rename" => Some(rename_cmd),
+        "edit" => Some(edit_cmd),
         _ => None
     }
 }
@@ -91,6 +92,7 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     println!(" dump");
     println!(" import");
     println!(" rename");
+    println!(" edit");
     true
 }
 
@@ -252,6 +254,149 @@ fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                     },
                 }
             }
+        }
+    }
+    true
+}
+
+#[derive(Debug)]
+struct EditCmd {
+    key: String,
+    op: EditCmdOperation,
+}
+
+#[derive(Debug)]
+enum EditCmdOperation {
+    Del(String),
+    Add(String, String),
+    Update(String, String),
+    Rename(String, String),
+}
+
+fn ask_user(prompt: &str, history: bool) -> String {
+    let response = linenoise::input(prompt).unwrap();
+    if history {
+        add_linenoise_history(&response);
+    }
+    response
+}
+
+impl EditCmd {
+    fn parse(args_line: &str) -> Option<Self> {
+        let args = args_line.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>();
+        let mut it = args.into_iter();
+        let key = it.next().unwrap_or_else(|| ask_user("Enter the key to be edited: ", true));
+        if key.is_empty() {
+            return None;
+        }
+        let cmd = it.next().unwrap_or_else(|| ask_user("Enter the edit command (del, add, update, rename): ", true));
+        match cmd.as_ref() {
+            "del" => {
+                let subkey = it.next().unwrap_or_else(|| ask_user("Enter the subkey: ", true));
+                if subkey.is_empty() { return None; }
+                return Some(EditCmd { key: key, op: EditCmdOperation::Del(subkey) });
+            },
+            "add" => {
+                let subkey = it.next().unwrap_or_else(|| ask_user("Enter the subkey: ", true));
+                if subkey.is_empty() { return None; }
+                let value = it.next().unwrap_or_else(|| ask_user("Enter the value: ", true));
+                if value.is_empty() { return None; }
+                return Some(EditCmd { key: key, op: EditCmdOperation::Add(subkey, value) });
+            },
+            "update" => {
+                let subkey = it.next().unwrap_or_else(|| ask_user("Enter the subkey: ", true));
+                if subkey.is_empty() { return None; }
+                let value = it.next().unwrap_or_else(|| ask_user("Enter the value: ", true));
+                if value.is_empty() { return None; }
+                return Some(EditCmd { key: key, op: EditCmdOperation::Update(subkey, value) });
+            },
+            "rename" => {
+                let subkey = it.next().unwrap_or_else(|| ask_user("Enter the subkey: ", true));
+                if subkey.is_empty() { return None; }
+                let new_subkey = it.next().unwrap_or_else(|| ask_user("Enter the new subkey name: ", true));
+                if new_subkey.is_empty() { return None; }
+                return Some(EditCmd { key: key, op: EditCmdOperation::Rename(subkey, new_subkey) });
+            },
+            _ => {
+                return None;
+            }
+        }
+    }
+}
+
+fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+    let cmd = EditCmd::parse(args_line);
+    println!("edit cmd: {:?}", cmd);
+    match cmd {
+        None => {
+            println!("Unexepected input. Expected: edit [key [op_type [subkey [arg]]]]");
+        }
+        Some(cmd) => {
+            let should_save: bool;
+            let msg: String;
+            match db.data.get_mut(&cmd.key) {
+                None => {
+                    should_save = false;
+                    msg = format!("Entry {} not found", cmd.key);
+                },
+                Some(entry) => {
+                    match cmd.op {
+                        EditCmdOperation::Del(subkey) => {
+                            match entry.value.remove(&subkey) {
+                                Some(_) => {
+                                    should_save = true;
+                                    msg = format!("Subkey {} removed", subkey);
+                                },
+                                None => {
+                                    should_save = false;
+                                    msg = format!("Entry {} does not contain subkey {}", cmd.key, subkey);
+                                }
+                            }
+                        },
+                        EditCmdOperation::Add(subkey, value) => {
+                            if let None = entry.value.get(&subkey) {
+                                entry.value.insert(subkey.clone(), value);
+                                should_save = true;
+                                msg = format!("Added subkey {} for {}", subkey, cmd.key);
+                            } else {
+                                should_save = false;
+                                msg = format!("Subkey {} already exists", subkey);
+                            }
+                        },
+                        EditCmdOperation::Update(subkey, value) => {
+                            match entry.value.get_mut(&subkey) {
+                                None => {
+                                    should_save = false;
+                                    msg = format!("Subkey {} does not exist", subkey);
+                                },
+                                Some(subvalue) => {
+                                    *subvalue = value;
+                                    should_save = true;
+                                    msg = format!("Updated subkey {} for {}", subkey, cmd.key);
+                                },
+                            }
+                        },
+                        EditCmdOperation::Rename(subkey, newsubkey) => {
+                            let cur = entry.value.remove(&subkey);
+                            match cur {
+                                None => {
+                                    should_save = false;
+                                    msg = format!("Subkey {} does not exist", subkey);
+                                },
+                                Some(cur) => {
+                                    entry.value.insert(newsubkey.clone(), cur);
+                                    should_save = true;
+                                    msg = format!("Renamed subkey {} to {}", subkey, newsubkey);
+                                }
+                            }
+                        },
+                    }
+                }
+            }
+            if should_save {
+                save_db(db).unwrap();
+            }
+            println!("{}", msg);
         }
     }
     true
@@ -497,7 +642,7 @@ fn load_db() -> io::Result<DbLoadResult> {
     }
 }
 
-fn save_db(db: &mut Db) -> io::Result<()> {
+fn save_db(db: &Db) -> io::Result<()> {
     let main_path = get_db_path(PathKind::Main);
     let backup_path = get_db_path(PathKind::Backup);
     let temp_path = get_db_path(PathKind::Temp);
