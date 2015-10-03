@@ -11,6 +11,7 @@
 extern crate linenoise;
 extern crate rustc_serialize;
 extern crate rand;
+extern crate chrono;
 
 use std::cmp;
 use std::collections::BTreeMap;
@@ -19,6 +20,7 @@ use rustc_serialize::json;
 use std::fs;
 use std::path::PathBuf;
 use std::io::{Read,Write};
+use chrono::Local;
 
 mod encrypted_file;
 
@@ -38,6 +40,15 @@ struct DbRecord {
 struct Db {
     data: BTreeMap<String, DbRecord>,
     password: String,
+}
+
+impl Db {
+    fn new() -> Db {
+        Db {
+            data: BTreeMap::new(),
+            password: String::new(),
+        }
+    }
 }
 
 #[derive(RustcDecodable, RustcEncodable, Debug)]
@@ -173,7 +184,7 @@ fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
             value: r.value.clone(),
         });
     }
-    let contents = json::encode(&dto).unwrap();
+    let contents = json::as_pretty_json(&dto).to_string();
     out.write_all(contents.as_bytes()).unwrap();
     out.write_all(b"\n").unwrap();
     out.flush().unwrap();
@@ -287,22 +298,31 @@ fn get_db_path(kind: PathKind) -> PathBuf {
     path.push("cred-man");
     std::fs::create_dir_all(&path).unwrap();
     path.push(match kind {
-        PathKind::Main => "keys.db",
-        PathKind::Temp => "keys.tmp.db",
-        PathKind::Backup => "keys.backup.db",
+        PathKind::Main => "keys.db".to_string(),
+        PathKind::Temp => "keys.tmp.db".to_string(),
+        PathKind::Backup => format!(
+            "keys.backup.{}.db",
+            Local::now().format("%Y%m%d_%H%M%S").to_string()
+                )
     });
     path
 }
 
-fn load_db(db: &mut Db) -> io::Result<()> {
+enum DbLoadResult {
+    Loaded(Db),
+    WrongPassword,
+}
+
+fn load_db() -> io::Result<DbLoadResult> {
     let path = get_db_path(PathKind::Main);
     let password = linenoise::input("Enter password: ").unwrap();
     linenoise::clear_screen();
     match fs::metadata(&path) {
         Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
-            println!("Path {} not found", path.to_string_lossy());
+            println!("Path {} not found, will create new database", path.to_string_lossy());
+            let mut db = Db::new();
             db.password = password;
-            Ok(())
+            Ok(DbLoadResult::Loaded(db))
         },
         Err(e) => Err(e),
         Ok(_) => {
@@ -312,14 +332,16 @@ fn load_db(db: &mut Db) -> io::Result<()> {
                     println!("Wrong password!");
                     let ans = linenoise::input("Recreate db (yes/N)? ").unwrap();
                     if ans.to_lowercase() == "yes" {
+                        let mut db = Db::new();
                         db.password = password;
-                        Ok(())
+                        Ok(DbLoadResult::Loaded(db))
                     } else {
-                        panic!();
+                        Ok(DbLoadResult::WrongPassword)
                     }
                 },
                 Some(contents) => {
                     let dto: Vec<DbRecordDTO> = json::decode(&contents).unwrap();
+                    let mut db = Db::new();
                     //println!("db = {:#?}", dto);
                     for r in dto.into_iter() {
                         let k = r.key.clone();
@@ -329,7 +351,7 @@ fn load_db(db: &mut Db) -> io::Result<()> {
                         });
                     }
                     db.password = password;
-                    Ok(())
+                    Ok(DbLoadResult::Loaded(db))
                 }
             }
         }
@@ -369,10 +391,11 @@ fn save_db(db: &mut Db) -> io::Result<()> {
 }
 
 fn main() {
-    let mut db = Db { data: BTreeMap::new(), password: String::new() };
-    match load_db(&mut db) {
-        Ok(_) => { println!("loaded"); }
-        Err(e) => { println!("error: {:?}", e); panic!(); }
+    let mut db;
+    match load_db() {
+        Ok(DbLoadResult::Loaded(loaded_db)) => { db = loaded_db; },
+        Ok(DbLoadResult::WrongPassword) => { return; },
+        Err(e) => { println!("error: {:}", e); return; },
     }
     while let Some(cmd) = linenoise::input("> ") {
         if cmd.len() > 0 {
