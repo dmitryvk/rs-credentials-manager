@@ -90,6 +90,11 @@ fn quit_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     false
 }
 
+fn add_linenoise_history(line: &str) {
+    if !line.trim().is_empty() {
+        linenoise::history_add(line);
+    }
+}
 
 fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
@@ -97,6 +102,7 @@ fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         _ => linenoise::input("Key: ")
     };
     if let Some(key) = arg {
+        add_linenoise_history(&key);
         if key.len() > 0 {
             match db.data.remove(&key) {
                 Some(_) => {
@@ -214,7 +220,11 @@ fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
 fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let filename = match rest_line {
         x if x != "" => x.trim().to_string(),
-        _ => linenoise::input("Enter filename: ").unwrap(),
+        _ => {
+            let tmp = linenoise::input("Enter filename: ").unwrap();
+            add_linenoise_history(&tmp);
+            tmp
+        }
     };
 
     match import_from(db, &filename) {
@@ -233,6 +243,7 @@ fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         _ => linenoise::input("find key: ")
     };
     if let Some(key) = arg {
+        add_linenoise_history(&key);
         if key.len() > 0 {
             match db.data.get(&key) {
                 None => {
@@ -256,6 +267,7 @@ fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         _ => linenoise::input("find key: ")
     };
     if let Some(key) = arg {
+        add_linenoise_history(&key);
         if key.len() > 0 {
             for db_key in db.data.keys() {
                 if db_key.contains(&key) {
@@ -398,6 +410,7 @@ fn main() {
         Err(e) => { println!("error: {:}", e); return; },
     }
     while let Some(cmd) = linenoise::input("> ") {
+        add_linenoise_history(&cmd);
         if cmd.len() > 0 {
             if !execute_cmd(&mut db, &cmd) {
                 return;
