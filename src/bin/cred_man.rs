@@ -24,7 +24,8 @@ use std::io::{Read,Write};
 use chrono::Local;
 use chrono::naive::datetime::NaiveDateTime;
 use cred_man_lib::encrypted_file;
-    
+use std::str::FromStr;
+
 fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
     let idx = cmd_line.find(' ').unwrap_or(cmd_line.len());
     let cmd = unsafe { cmd_line.slice_unchecked(0, idx) };
@@ -73,6 +74,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
         "del" => Some(del_cmd),
         "dump" => Some(dump_cmd),
         "import" => Some(import_cmd),
+        "rename" => Some(rename_cmd),
         _ => None
     }
 }
@@ -88,6 +90,7 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     println!(" del");
     println!(" dump");
     println!(" import");
+    println!(" rename");
     true
 }
 
@@ -179,6 +182,76 @@ fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
                      key,
                      db.data.len());
             save_db(db).unwrap();
+        }
+    }
+    true
+}
+
+struct RenameCmdArgs {
+    from: String,
+    to: String,
+}
+
+impl RenameCmdArgs {
+    fn parse(args_line: &str) -> Option<RenameCmdArgs> {
+        let mut args = args_line.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>();
+        if args.len() > 2 {
+            return None;
+        }
+        if args.len() == 0 {
+            let k = linenoise::input("old key name: ");
+            match k {
+                Some(k) => {
+                    add_linenoise_history(&k);
+                    args.push(k);
+                },
+                None => { return None; },
+            }
+        }
+        if args.len() == 1 {
+            let k = linenoise::input("new key name: ");
+            match k {
+                Some(k) => {
+                    add_linenoise_history(&k);
+                    args.push(k);
+                },
+                None => { return None; },
+            }
+        }
+        let from;
+        let to;
+        {
+            let mut it = args.into_iter();
+            from = it.next().unwrap();
+            to = it.next().unwrap();
+        }
+        Some(RenameCmdArgs { from: from, to: to })
+    }
+}
+
+fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+    match RenameCmdArgs::parse(args_line) {
+        None => {
+            println!("Unexpected input; expected: rename [oldname [newname]]");
+        },
+        Some(RenameCmdArgs { from, to }) => {
+            if let Some(_) = db.data.get(&to) {
+                println!("Key {} already exists, not renaming", to);
+            } else {
+                let cur = db.data.remove(&from);
+                match cur {
+                    None => {
+                        println!("Key {} does not exist", from);
+                    },
+                    Some(mut v) => {
+                        v.key = to.clone();
+                        v.timestamp = Local::now().naive_local();
+                        db.data.insert(to.clone(), v);
+                        save_db(db).unwrap();
+                        println!("Renamed {} to {}", from, to);
+                    },
+                }
+            }
         }
     }
     true
@@ -288,10 +361,54 @@ fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     true
 }
 
-fn list_cmd(db: &mut Db, _: &str, _: &str) -> bool {
-    for key in db.data.keys() {
-        println!("{:}", key);
+enum ListCmd {
+    AllKeys,
+    Recent(Option<usize>),
+}
+
+impl ListCmd {
+    fn parse(args_line: &str) -> Option<Self> {
+        let args = args_line.split_whitespace().collect::<Vec<_>>();
+        if args.len() == 0 {
+            Some(ListCmd::AllKeys)
+        } else if args.len() == 1 && args[0] == "recent" {
+            Some(ListCmd::Recent(None))
+        } else if args.len() == 2 && args[0] == "recent" {
+            usize::from_str(args[1]).ok().map(|c| ListCmd::Recent(Some(c)))
+        } else {
+            None
+        }
     }
+}
+
+fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+    let cmd = ListCmd::parse(args_line);
+    match cmd {
+        Some(ListCmd::AllKeys) => {
+            for v in db.data.values() {
+                println!("{} ({})", v.key, v.timestamp.format("%Y-%m-%d %H:%M:%S"));
+            }
+        },
+        Some(ListCmd::Recent(opt_count)) => {
+            let mut entries = db.data.values().collect::<Vec<_>>();
+            entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+            let count = match opt_count {
+                Some(c) => c,
+                None => 10,
+            };
+            while entries.len() > count {
+                let remove_idx = entries.len() - 1;
+                entries.remove(remove_idx);
+            }
+            println!("{} recent keys:", count);
+            for v in entries.iter() {
+                println!("{} ({})", v.key, v.timestamp.format("%Y-%m-%d %H:%M:%S"));
+            }
+        },
+        None => {
+            println!("Unrecognized arguments for list; expected: list [recent [count]]");
+        }
+    };
     true
 }
 
