@@ -9,6 +9,6 @@ name = "cred_man_lib"
 [dependencies]
 linenoise-rust = "0.1.12"
 rustc-serialize = "0.3"
-rust-crypto = "*"
+rust-crypto = { version = "*", git = "https://github.com/andreasots/rust-crypto.git", branch="volatile-asm" }
 rand = "*"
 chrono = "0.2"
