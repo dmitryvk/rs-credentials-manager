@@ -16,15 +16,15 @@ extern crate chrono;
 
 use std::cmp;
 use std::collections::BTreeMap;
-use std::io;
-use rustc_serialize::json;
 use std::fs;
-use std::path::PathBuf;
 use std::io::{Read,Write};
+use std::io;
+use std::path::PathBuf;
+use std::str::FromStr;
 use chrono::Local;
 use chrono::naive::datetime::NaiveDateTime;
 use cred_man_lib::encrypted_file;
-use std::str::FromStr;
+use rustc_serialize::json;
 
 fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
     let idx = cmd_line.find(' ').unwrap_or(cmd_line.len());
@@ -63,7 +63,7 @@ struct DbRecordDTO {
 
 const DTO_TIME_FORMAT: &'static str = "%Y-%m-%dT%H:%M:%S";
 
-fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
+fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &DbLocation, &str, &str) -> bool> {
     match cmd {
         "help" => Some(help_cmd),
         "quit" => Some(quit_cmd),
@@ -80,7 +80,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
     }
 }
 
-fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
+fn help_cmd(_: &mut Db, _: &DbLocation, _: &str, _: &str) -> bool {
     println!("Commands:");
     println!(" help");
     println!(" quit");
@@ -96,7 +96,7 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     true
 }
 
-fn quit_cmd(_: &mut Db, _: &str, _: &str) -> bool {
+fn quit_cmd(_: &mut Db, _: &DbLocation, _: &str, _: &str) -> bool {
     false
 }
 
@@ -106,7 +106,7 @@ fn add_linenoise_history(line: &str) {
     }
 }
 
-fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn del_cmd(db: &mut Db, db_location: &DbLocation, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
         _ => linenoise::input("Key: ")
@@ -116,7 +116,7 @@ fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         if key.len() > 0 {
             match db.data.remove(&key) {
                 Some(_) => {
-                    save_db(db).unwrap();
+                    save_db(db, db_location).unwrap();
                     println!("Removed '{:}'", key);
                 },
                 None => {
@@ -158,7 +158,7 @@ fn get_kv() -> KvResult {
     }
 }
 
-fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn add_cmd(db: &mut Db, db_location: &DbLocation, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
         _ => linenoise::input("new key: ")
@@ -183,7 +183,7 @@ fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
             println!("inserted '{}', now storing {} keys",
                      key,
                      db.data.len());
-            save_db(db).unwrap();
+            save_db(db, db_location).unwrap();
         }
     }
     true
@@ -231,7 +231,7 @@ impl RenameCmdArgs {
     }
 }
 
-fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+fn rename_cmd(db: &mut Db, db_location: &DbLocation, _: &str, args_line: &str) -> bool {
     match RenameCmdArgs::parse(args_line) {
         None => {
             println!("Unexpected input; expected: rename [oldname [newname]]");
@@ -249,7 +249,7 @@ fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                         v.key = to.clone();
                         v.timestamp = Local::now().naive_local();
                         db.data.insert(to.clone(), v);
-                        save_db(db).unwrap();
+                        save_db(db, db_location).unwrap();
                         println!("Renamed {} to {}", from, to);
                     },
                 }
@@ -324,7 +324,7 @@ impl EditCmd {
     }
 }
 
-fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+fn edit_cmd(db: &mut Db, db_location: &DbLocation, _: &str, args_line: &str) -> bool {
     let cmd = EditCmd::parse(args_line);
     println!("edit cmd: {:?}", cmd);
     match cmd {
@@ -394,7 +394,7 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                 }
             }
             if should_save {
-                save_db(db).unwrap();
+                save_db(db, db_location).unwrap();
             }
             println!("{}", msg);
         }
@@ -402,7 +402,7 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
     true
 }
 
-fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn dump_cmd(db: &mut Db, _: &DbLocation, _: &str, rest_line: &str) -> bool {
     let mut out: Box<Write> = match rest_line {
         x if x != "" => Box::new(std::fs::File::create(&x).unwrap()),
         _ => Box::new(std::io::stdout()),
@@ -423,7 +423,7 @@ fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     true
 }
 
-fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
+fn import_from(db: &mut Db, db_location: &DbLocation, file_name: &str) -> io::Result<()> {
     let mut contents = String::new();
     let mut f = try!(std::fs::File::open(file_name));
     try!(f.read_to_string(&mut contents));
@@ -438,12 +438,12 @@ fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
         db.data.insert(k, v);
     }
 
-    save_db(db).unwrap();
+    save_db(db, db_location).unwrap();
 
     Ok(())
 }
 
-fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn import_cmd(db: &mut Db, db_location: &DbLocation, _: &str, rest_line: &str) -> bool {
     let filename = match rest_line {
         x if x != "" => x.trim().to_string(),
         _ => {
@@ -453,7 +453,7 @@ fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         }
     };
 
-    match import_from(db, &filename) {
+    match import_from(db, db_location, &filename) {
         Ok(()) => { },
         Err(e) => {
             println!("Error: {:?}", e);
@@ -463,7 +463,7 @@ fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     true
 }
 
-fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn get_cmd(db: &mut Db, _: &DbLocation, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
         _ => linenoise::input("find key: ")
@@ -488,7 +488,7 @@ fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     true
 }
 
-fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn find_cmd(db: &mut Db, _: &DbLocation, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
         _ => linenoise::input("find key: ")
@@ -526,7 +526,7 @@ impl ListCmd {
     }
 }
 
-fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+fn list_cmd(db: &mut Db, _: &DbLocation, _: &str, args_line: &str) -> bool {
     let cmd = ListCmd::parse(args_line);
     match cmd {
         Some(ListCmd::AllKeys) => {
@@ -557,15 +557,20 @@ fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
     true
 }
 
-fn execute_cmd(db: &mut Db, cmd_line: &str) -> bool {
+fn execute_cmd(db: &mut Db, location: &DbLocation, cmd_line: &str) -> bool {
     let (cmd, args) = parse_cmd_line(cmd_line);
     match get_command_handler(cmd) {
-        Some(handler) => { handler(db, cmd, args) }
+        Some(handler) => { handler(db, location, cmd, args) }
         None => {
             println!("Unknown command {:}; try `help'", cmd);
             true
         }
     }
+}
+
+enum DbLocation {
+    DotLocal,
+    SpecifiedDirectory(String),
 }
 
 enum PathKind {
@@ -574,11 +579,19 @@ enum PathKind {
     Backup,
 }
 
-fn get_db_path(kind: PathKind) -> PathBuf {
-    let mut path = std::env::home_dir().unwrap();
-    path.push(".local");
-    path.push("share");
-    path.push("cred-man");
+fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
+    let mut path;
+    match location {
+        &DbLocation::DotLocal => {
+            path = std::env::home_dir().unwrap();
+            path.push(".local");
+            path.push("share");
+            path.push("cred-man");
+        },
+        &DbLocation::SpecifiedDirectory(ref dir) => {
+            path = PathBuf::from(&dir);
+        },
+    }
     std::fs::create_dir_all(&path).unwrap();
     path.push(match kind {
         PathKind::Main => "keys.db".to_string(),
@@ -596,8 +609,8 @@ enum DbLoadResult {
     WrongPassword,
 }
 
-fn load_db() -> io::Result<DbLoadResult> {
-    let path = get_db_path(PathKind::Main);
+fn load_db(location: &DbLocation) -> io::Result<DbLoadResult> {
+    let path = get_db_path(PathKind::Main, location);
     let password = linenoise::input("Enter password: ").unwrap();
     linenoise::clear_screen();
     match fs::metadata(&path) {
@@ -642,10 +655,10 @@ fn load_db() -> io::Result<DbLoadResult> {
     }
 }
 
-fn save_db(db: &Db) -> io::Result<()> {
-    let main_path = get_db_path(PathKind::Main);
-    let backup_path = get_db_path(PathKind::Backup);
-    let temp_path = get_db_path(PathKind::Temp);
+fn save_db(db: &Db, location: &DbLocation) -> io::Result<()> {
+    let main_path = get_db_path(PathKind::Main, location);
+    let backup_path = get_db_path(PathKind::Backup, location);
+    let temp_path = get_db_path(PathKind::Temp, location);
     //println!("main_path: {:?}", main_path);
     match fs::metadata(&main_path) {
         Ok(_) => {
@@ -675,9 +688,21 @@ fn save_db(db: &Db) -> io::Result<()> {
     Ok(())
 }
 
+fn parse_args() -> DbLocation {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.len() == 0 {
+        DbLocation::DotLocal
+    } else {
+        let mut it = args.into_iter();
+        let s = it.next().unwrap();
+        DbLocation::SpecifiedDirectory(s)
+    }
+}
+
 fn main() {
+    let db_location = parse_args();
     let mut db;
-    match load_db() {
+    match load_db(&db_location) {
         Ok(DbLoadResult::Loaded(loaded_db)) => { db = loaded_db; },
         Ok(DbLoadResult::WrongPassword) => { return; },
         Err(e) => { println!("error: {:}", e); return; },
@@ -685,7 +710,7 @@ fn main() {
     while let Some(cmd) = linenoise::input("> ") {
         add_linenoise_history(&cmd);
         if cmd.len() > 0 {
-            if !execute_cmd(&mut db, &cmd) {
+            if !execute_cmd(&mut db, &db_location, &cmd) {
                 return;
             }
         }
