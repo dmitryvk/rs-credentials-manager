@@ -3,9 +3,7 @@ extern crate cred_man_lib;
 
 use cred_man_lib::encrypted_file;
 
-use std::env;
 use std::fs::File;
-use std::io;
 use std::io::Write;
 
 fn main() {

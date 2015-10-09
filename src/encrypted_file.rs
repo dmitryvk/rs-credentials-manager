@@ -61,9 +61,20 @@ fn read_bytes(source: &mut Read, buffer: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
+const CRED_MAN_MAGIC: &'static [u8] = b"CREDMAN";
+
+const CRED_MAN_VERSION: i32 = 1;
+
+pub fn i32_to_bytes(x: i32) -> [u8; 4] {
+    let v: [u8; 4] = [((x >> 24) & 0xFF) as u8, ((x >> 16) & 0xFF) as u8, ((x >> 8) & 0xFF) as u8, (x & 0xFF) as u8];
+    v
+}
+
 pub fn write_to_file<P: AsRef<Path>>(file_name: P, data: &EncryptedFileContent) -> io::Result<()> {
     let mut file = try!(File::create(file_name));
-    
+
+    try!(file.write_all(CRED_MAN_MAGIC));
+    try!(file.write_all(&i32_to_bytes(CRED_MAN_VERSION)));
     try!(file.write_all(&data.salt));
     try!(file.write_all(&data.nonce));
     try!(file.write_all(&data.tag));
@@ -76,16 +87,29 @@ pub fn parse_file<P: AsRef<Path>>(file_name: P) -> io::Result<EncryptedFileConte
     let mut file = try!(File::open(file_name));
     let size = try!(file.metadata()).len() as usize;
 
+    let mut magic = vec![0u8; CRED_MAN_MAGIC.len()];
+    let mut ver_bytes = [0u8; 4];
     let mut salt = vec![0u8; 16];
     let mut nonce = vec![0u8; 12];
     let mut tag = vec![0u8; 16];
-    let mut ciphertext = vec![0u8; size - 16 - 12 - 16];
+    let mut ciphertext = vec![0u8; size - CRED_MAN_MAGIC.len() - 4 - 16 - 12 - 16];
 
+    try!(read_bytes(&mut file, &mut magic));
+    try!(read_bytes(&mut file, &mut ver_bytes));
     try!(read_bytes(&mut file, &mut salt));
     try!(read_bytes(&mut file, &mut nonce));
     try!(read_bytes(&mut file, &mut tag));
     try!(read_bytes(&mut file, &mut ciphertext));
 
+    if magic != CRED_MAN_MAGIC {
+        panic!("MAGIC mismatch");
+    }
+    let ver: i32 = ((ver_bytes[0] as i32) << 24) | ((ver_bytes[1] as i32) << 16) | ((ver_bytes[2] as i32) << 8) | (ver_bytes[3] as i32);
+
+    if ver > 1 {
+        panic!("Unsupported credentials database version: {}", ver);
+    }
+    
     Ok(EncryptedFileContent {
         salt: salt,
         nonce: nonce,
