@@ -1,6 +1,6 @@
 [package]
 name = "cred-man"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Dmitry Kalyanov <Kalyanov.Dmitry@gmail.com>"]
 
 [lib]
@@ -9,6 +9,6 @@ name = "cred_man_lib"
 [dependencies]
 linenoise-rust = "0.1.12"
 rustc-serialize = "0.3"
-rust-crypto = { version = "*", git = "https://github.com/andreasots/rust-crypto.git", branch="volatile-asm" }
-rand = "*"
+rust-crypto = "0.2.34"
+rand = "0.3.11"
 chrono = "0.2"
