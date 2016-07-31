@@ -12,3 +12,5 @@ rustc-serialize = "0.3"
 rust-crypto = "0.2.34"
 rand = "0.3.11"
 chrono = "0.2"
+gtk = { version = "0.1.0", features = ["embed-lgpl-docs"] }
+glib = "0.1.0"

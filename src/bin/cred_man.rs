@@ -563,7 +563,10 @@ fn main() {
     let password = linenoise::input("Enter password: ").unwrap();
     match Db::load(&db_location, &password) {
         Ok(DbLoadResult::Loaded(loaded_db)) => { db = loaded_db; },
-        Ok(DbLoadResult::WrongPassword) => { return; },
+        Ok(DbLoadResult::WrongPassword) => {
+            println!("Wrong password");
+            return;
+        },
         Err(e) => { println!("error: {:}", e); return; },
     }
     while let Some(cmd) = linenoise::input("> ") {
