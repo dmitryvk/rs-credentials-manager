@@ -569,6 +569,7 @@ fn main() {
         },
         Err(e) => { println!("error: {:}", e); return; },
     }
+    linenoise::clear_screen();
     while let Some(cmd) = linenoise::input("> ") {
         add_linenoise_history(&cmd);
         if cmd.len() > 0 {
