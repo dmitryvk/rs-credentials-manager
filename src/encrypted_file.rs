@@ -56,7 +56,7 @@ pub fn encrypt(plaintext: &str, password: &str) -> EncryptedFileContent {
 fn read_bytes(source: &mut Read, buffer: &mut [u8]) -> io::Result<()> {
     let mut pos = 0;
     while pos < buffer.len() {
-        pos += try!(source.read(buffer.split_at_mut(pos).1));
+        pos += source.read(buffer.split_at_mut(pos).1)?;
     }
     Ok(())
 }
@@ -71,21 +71,21 @@ pub fn i32_to_bytes(x: i32) -> [u8; 4] {
 }
 
 pub fn write_to_file<P: AsRef<Path>>(file_name: P, data: &EncryptedFileContent) -> io::Result<()> {
-    let mut file = try!(File::create(file_name));
+    let mut file = File::create(file_name)?;
 
-    try!(file.write_all(CRED_MAN_MAGIC));
-    try!(file.write_all(&i32_to_bytes(CRED_MAN_VERSION)));
-    try!(file.write_all(&data.salt));
-    try!(file.write_all(&data.nonce));
-    try!(file.write_all(&data.tag));
-    try!(file.write_all(&data.ciphertext));
+    file.write_all(CRED_MAN_MAGIC)?;
+    file.write_all(&i32_to_bytes(CRED_MAN_VERSION))?;
+    file.write_all(&data.salt)?;
+    file.write_all(&data.nonce)?;
+    file.write_all(&data.tag)?;
+    file.write_all(&data.ciphertext)?;
 
     Ok(())
 }
 
 pub fn parse_file<P: AsRef<Path>>(file_name: P) -> io::Result<EncryptedFileContent> {
-    let mut file = try!(File::open(file_name));
-    let size = try!(file.metadata()).len() as usize;
+    let mut file = File::open(file_name)?;
+    let size = file.metadata()?.len() as usize;
 
     let mut magic = vec![0u8; CRED_MAN_MAGIC.len()];
     let mut ver_bytes = [0u8; 4];
@@ -94,12 +94,12 @@ pub fn parse_file<P: AsRef<Path>>(file_name: P) -> io::Result<EncryptedFileConte
     let mut tag = vec![0u8; 16];
     let mut ciphertext = vec![0u8; size - CRED_MAN_MAGIC.len() - 4 - 16 - 12 - 16];
 
-    try!(read_bytes(&mut file, &mut magic));
-    try!(read_bytes(&mut file, &mut ver_bytes));
-    try!(read_bytes(&mut file, &mut salt));
-    try!(read_bytes(&mut file, &mut nonce));
-    try!(read_bytes(&mut file, &mut tag));
-    try!(read_bytes(&mut file, &mut ciphertext));
+    read_bytes(&mut file, &mut magic)?;
+    read_bytes(&mut file, &mut ver_bytes)?;
+    read_bytes(&mut file, &mut salt)?;
+    read_bytes(&mut file, &mut nonce)?;
+    read_bytes(&mut file, &mut tag)?;
+    read_bytes(&mut file, &mut ciphertext)?;
 
     if magic != CRED_MAN_MAGIC {
         panic!("MAGIC mismatch");

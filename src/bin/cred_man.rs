@@ -403,8 +403,8 @@ fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
 
 fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
     let mut contents = String::new();
-    let mut f = try!(std::fs::File::open(file_name));
-    try!(f.read_to_string(&mut contents));
+    let mut f = std::fs::File::open(file_name)?;
+    f.read_to_string(&mut contents)?;
     let dto: Vec<DbRecordDTO> = json::decode(&contents).unwrap();
     for r in dto {
         let v = DbRecord {

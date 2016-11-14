@@ -98,7 +98,7 @@ impl Db {
             },
             Err(e) => Err(e),
             Ok(_) => {
-                let data = try!(encrypted_file::parse_file(&path));
+                let data = encrypted_file::parse_file(&path)?;
                 match encrypted_file::decrypt(&data, &password) {
                     None => {
                         Ok(DbLoadResult::WrongPassword)
@@ -130,7 +130,7 @@ impl Db {
         match fs::metadata(&main_path) {
             Ok(_) => {
                 //println!("copy main to backup");
-                try!(fs::copy(&main_path, &backup_path));
+                fs::copy(&main_path, &backup_path)?;
             },
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => (),
             Err(e) => {
@@ -149,9 +149,9 @@ impl Db {
         //println!("contents: {}", contents);
         let data = encrypted_file::encrypt(&contents, &self.password);
         //println!("encrypted");
-        try!(encrypted_file::write_to_file(&temp_path, &data));
+        encrypted_file::write_to_file(&temp_path, &data)?;
         //println!("wrote to {:?}", temp_path);
-        try!(fs::rename(&temp_path, &main_path));
+        fs::rename(&temp_path, &main_path)?;
         Ok(())
     }
 }

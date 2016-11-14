@@ -13,12 +13,12 @@ fn main() {
         std::process::exit(1);
     }
     let f = || -> Result<(), DecryptError> {
-        let plaintext = try!(do_decrypt(&args[0]));
+        let plaintext = do_decrypt(&args[0])?;
         if args.len() == 1 {
             println!("{}", plaintext);
         } else {
-            let mut f = try!(File::create(&args[1]));
-            try!(f.write_all(plaintext.as_bytes()));
+            let mut f = File::create(&args[1])?;
+            f.write_all(plaintext.as_bytes())?;
         }
         Ok(())
     };
@@ -54,7 +54,7 @@ impl std::fmt::Display for DecryptError {
 }
 
 fn do_decrypt(path: &str) -> Result<String, DecryptError> {
-    let encrypted_data = try!(encrypted_file::parse_file(&path));
+    let encrypted_data = encrypted_file::parse_file(&path)?;
     let password = linenoise::input("Enter password: ").unwrap();
     let maybe_plaintext = encrypted_file::decrypt(&encrypted_data, &password);
     match maybe_plaintext {
