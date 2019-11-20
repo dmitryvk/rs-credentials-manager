@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Credentials Manager
+Exec=/home/dvk/.cargo/bin/cred_man_gtk
+Terminal=false
+Categories=Utility
+Icon=security-high-symbolic
