@@ -25,9 +25,8 @@ use cred_man_lib::{Db,DbRecord,DbLocation,DbLoadResult};
 
 fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
     let idx = cmd_line.find(' ').unwrap_or(cmd_line.len());
-    let cmd = unsafe { cmd_line.slice_unchecked(0, idx) };
-    let rest = unsafe { cmd_line.slice_unchecked(cmp::min(cmd_line.len(), idx + 1), cmd_line.len()) }.trim();
-    //println!("cmd = {:?} rest = {:?}", cmd, rest);
+    let cmd = cmd_line.get(0..idx).expect("str.get panicked");
+    let rest = cmd_line.get(cmp::min(cmd_line.len(), idx + 1)..cmd_line.len()).expect("str.get panicked").trim();
     (cmd, rest)
 }
 
