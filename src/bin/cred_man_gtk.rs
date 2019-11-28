@@ -15,11 +15,11 @@ const BUILDER_UI: &'static str = include_str!("cred_man_gtk.ui");
 
 struct Ui {
     window: gtk::Window,
-    treeCredentials: gtk::TreeView,
+    tree_credentials: gtk::TreeView,
     store_credentials: gtk::TreeStore,
-    btnUnlock: gtk::ToolButton,
-    dlgPassword: gtk::Dialog,
-    entryPassword: gtk::Entry,
+    btn_unlock: gtk::ToolButton,
+    dlg_password: gtk::Dialog,
+    entry_password: gtk::Entry,
     entry_search_credentials: gtk::Entry,
     
     dialog_credinfo: gtk::Dialog,
@@ -39,15 +39,15 @@ impl Ui {
         
         let w: gtk::Window = b.get_object("wndMain").expect("Unable to find wndMain in GtkBuilder definition");
         
-        let treeCredentials: gtk::TreeView = b.get_object("treeCredentials").expect("Unable to find treeCredentials");
+        let tree_credentials: gtk::TreeView = b.get_object("treeCredentials").expect("Unable to find treeCredentials");
         
         let store_credentials: gtk::TreeStore = b.get_object("storeCredentials").expect("Unable to find storeCredentials");
         
-        let btnUnlock: gtk::ToolButton = b.get_object("btnUnlock").expect("Unable to find btnUnlock");
+        let btn_unlock: gtk::ToolButton = b.get_object("btnUnlock").expect("Unable to find btnUnlock");
         
-        let dlgPassword: gtk::Dialog = b.get_object("dlgPassword").expect("Unable to find dlgPassword");
+        let dlg_password: gtk::Dialog = b.get_object("dlgPassword").expect("Unable to find dlgPassword");
         
-        let entryPassword: gtk::Entry = b.get_object("entryPassword").expect("Unable to find entryPassword");
+        let entry_password: gtk::Entry = b.get_object("entryPassword").expect("Unable to find entryPassword");
         
         let entry_search_credentials: gtk::Entry = b.get_object("entrySearchCredentials").expect("Unable to find entrySearchCredentials");
         
@@ -58,11 +58,11 @@ impl Ui {
         
         let result = Rc::new(RefCell::new(Ui {
             window: w.clone(),
-            treeCredentials: treeCredentials.clone(),
+            tree_credentials: tree_credentials.clone(),
             store_credentials: store_credentials.clone(),
-            btnUnlock: btnUnlock.clone(),
-            dlgPassword: dlgPassword.clone(),
-            entryPassword: entryPassword.clone(),
+            btn_unlock: btn_unlock.clone(),
+            dlg_password: dlg_password.clone(),
+            entry_password: entry_password.clone(),
             entry_search_credentials: entry_search_credentials.clone(),
             dialog_credinfo: dialog_credinfo.clone(),
             label_credinfo_key: label_credinfo_key.clone(),
@@ -73,35 +73,35 @@ impl Ui {
         }));
         
         let result2 = result.clone();
-        btnUnlock.connect_clicked(move |_| {
-            result2.borrow().dlgPassword.show_all();
+        btn_unlock.connect_clicked(move |_| {
+            result2.borrow().dlg_password.show_all();
         });
         
         let result2 = result.clone();
-        dlgPassword.connect_delete_event(move |_, _| {
-            result2.borrow().dlgPassword.hide();
+        dlg_password.connect_delete_event(move |_, _| {
+            result2.borrow().dlg_password.hide();
             Inhibit(true)
         });
         
         let result2 = result.clone();
-        dlgPassword.connect_response(move |_, response| {
+        dlg_password.connect_response(move |_, response| {
             if response == gtk::ResponseType::Other(5) {
-                let password = result2.borrow().entryPassword.get_text().map(|x| x.as_str().to_owned()).unwrap_or("".to_owned());
+                let password = result2.borrow().entry_password.get_text().map(|x| x.as_str().to_owned()).unwrap_or("".to_owned());
                 
                 match Db::load(&DbLocation::DotLocal, &password) {
                     Ok(DbLoadResult::Loaded(db)) => {
                         result2.borrow_mut().db = Some(db);
                 
                         result2.borrow().entry_search_credentials.set_sensitive(true);
-                        result2.borrow().treeCredentials.set_sensitive(true);
-                        result2.borrow().btnUnlock.set_sensitive(false);
-                        result2.borrow().dlgPassword.hide();
+                        result2.borrow().tree_credentials.set_sensitive(true);
+                        result2.borrow().btn_unlock.set_sensitive(false);
+                        result2.borrow().dlg_password.hide();
                         
                         Ui::refresh_tree(&result2);
                     },
                     Ok(DbLoadResult::WrongPassword) => {
                         let dlg = gtk::MessageDialog::new(
-                            Some(&result2.borrow().dlgPassword),
+                            Some(&result2.borrow().dlg_password),
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Close,
@@ -113,7 +113,7 @@ impl Ui {
                     },
                     Err(e) => {
                         let dlg = gtk::MessageDialog::new(
-                            Some(&result2.borrow().dlgPassword),
+                            Some(&result2.borrow().dlg_password),
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Close,
@@ -128,7 +128,7 @@ impl Ui {
         });
         
         let result2 = result.clone();
-        treeCredentials.connect_row_activated(move |_, path, _| {
+        tree_credentials.connect_row_activated(move |_, path, _| {
             let store = result2.borrow().store_credentials.clone();
             let iter = store.get_iter(path).unwrap();
             let parent_iter = match store.iter_parent(&iter) {
@@ -161,7 +161,7 @@ impl Ui {
         });
         
         entry_search_credentials.set_sensitive(false);
-        treeCredentials.set_sensitive(false);
+        tree_credentials.set_sensitive(false);
         
         w.show_all();
         
@@ -252,7 +252,7 @@ impl Ui {
 fn main() {
     gtk::init().expect("Unable to initialize Gtk+");
     
-    let ui = Ui::new();
+    let _ = Ui::new();
     
     gtk::main();
 }
