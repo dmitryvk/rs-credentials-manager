@@ -32,7 +32,7 @@ struct Ui {
 }
 
 impl Ui {
-    pub fn new() -> Rc<RefCell<Self>> {
+    pub fn new(db_location: DbLocation) -> Rc<RefCell<Self>> {
         let b = gtk::Builder::new();
         
         b.add_from_string(BUILDER_UI).expect("Unable to load GtkBuilder definition");
@@ -88,7 +88,7 @@ impl Ui {
             if response == gtk::ResponseType::Other(5) {
                 let password = result2.borrow().entry_password.get_text().map(|x| x.as_str().to_owned()).unwrap_or("".to_owned());
                 
-                match Db::load(&DbLocation::DotLocal, &password) {
+                match Db::load(&db_location, &password) {
                     Ok(DbLoadResult::Loaded(db)) => {
                         result2.borrow_mut().db = Some(db);
                 
@@ -249,10 +249,23 @@ impl Ui {
     }
 }
 
+fn parse_args() -> DbLocation {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    if args.len() == 0 {
+        DbLocation::DotLocal
+    } else {
+        let mut it = args.into_iter();
+        let s = it.next().unwrap();
+        DbLocation::SpecifiedDirectory(s)
+    }
+}
+
 fn main() {
+    let db_location = parse_args();
+
     gtk::init().expect("Unable to initialize Gtk+");
     
-    let _ = Ui::new();
+    let _ = Ui::new(db_location);
     
     gtk::main();
 }
