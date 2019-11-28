@@ -1,6 +1,6 @@
 extern crate crypto;
 
-use rand::{Rng, OsRng};
+use getrandom::getrandom;
 use self::crypto::scrypt::{scrypt, ScryptParams};
 use self::crypto::aes::KeySize;
 use self::crypto::aes_gcm::AesGcm;
@@ -11,11 +11,10 @@ use std::str;
 use std::io;
 use std::io::{Read,Write};
 
-pub fn generate_salt<T>(rng: &mut T, n: usize) -> Vec<u8>
-    where T: Rng
+pub fn generate_salt(n: usize) -> Vec<u8>
 {
     let mut data: Vec<u8> = vec![0; n];
-    rng.fill_bytes(&mut data);
+    getrandom(&mut data).expect("getrandom() failed");
     data
 }
 
@@ -33,11 +32,9 @@ pub struct EncryptedFileContent {
 }
 
 pub fn encrypt(plaintext: &str, password: &str) -> EncryptedFileContent {
-    let mut rng = OsRng::new().ok().expect("Unable to open crypto RNG");
-    
-    let salt = generate_salt(&mut rng, 16);
+    let salt = generate_salt(16);
     let key = derive_key(&salt, &password);
-    let nonce = generate_salt(&mut rng, 12);
+    let nonce = generate_salt(12);
     let mut tag = vec![0u8; 16];
     let aad = b"cred-man";
     
@@ -53,7 +50,7 @@ pub fn encrypt(plaintext: &str, password: &str) -> EncryptedFileContent {
     }
 }
 
-fn read_bytes(source: &mut Read, buffer: &mut [u8]) -> io::Result<()> {
+fn read_bytes(source: &mut dyn Read, buffer: &mut [u8]) -> io::Result<()> {
     let mut pos = 0;
     while pos < buffer.len() {
         pos += source.read(buffer.split_at_mut(pos).1)?;

@@ -1,6 +1,5 @@
 extern crate linenoise;
 extern crate rustc_serialize;
-extern crate rand;
 extern crate chrono;
 
 use std::collections::BTreeMap;
@@ -8,7 +7,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 use chrono::Local;
-use chrono::naive::datetime::NaiveDateTime;
+use chrono::naive::NaiveDateTime;
 use rustc_serialize::json;
 
 pub mod encrypted_file;
@@ -61,7 +60,7 @@ fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
     let mut path;
     match location {
         &DbLocation::DotLocal => {
-            path = std::env::home_dir().unwrap();
+            path = dirs::home_dir().expect("home_dir failed");
             path.push(".local");
             path.push("share");
             path.push("cred-man");

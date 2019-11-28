@@ -1,7 +1,6 @@
 extern crate cred_man_lib;
 extern crate linenoise;
 extern crate rustc_serialize;
-extern crate rand;
 extern crate chrono;
 
 extern crate gtk;
@@ -86,8 +85,8 @@ impl Ui {
         
         let result2 = result.clone();
         dlgPassword.connect_response(move |_, response| {
-            if response == -<gtk::ResponseType as Into<i32>>::into(gtk::ResponseType::Ok) {
-                let password = result2.borrow().entryPassword.get_text().unwrap_or("".to_owned());
+            if response == gtk::ResponseType::Other(5) {
+                let password = result2.borrow().entryPassword.get_text().map(|x| x.as_str().to_owned()).unwrap_or("".to_owned());
                 
                 match Db::load(&DbLocation::DotLocal, &password) {
                     Ok(DbLoadResult::Loaded(db)) => {
@@ -103,7 +102,7 @@ impl Ui {
                     Ok(DbLoadResult::WrongPassword) => {
                         let dlg = gtk::MessageDialog::new(
                             Some(&result2.borrow().dlgPassword),
-                            gtk::DIALOG_MODAL,
+                            gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Close,
                             &"Wrong password"
@@ -115,7 +114,7 @@ impl Ui {
                     Err(e) => {
                         let dlg = gtk::MessageDialog::new(
                             Some(&result2.borrow().dlgPassword),
-                            gtk::DIALOG_MODAL,
+                            gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Close,
                             &format!("error: {:}", e)
@@ -171,7 +170,7 @@ impl Ui {
     
     fn refresh_tree(ui: &Rc<RefCell<Self>>) {
         let store_credentials = ui.borrow().store_credentials.clone();
-        let search_criteria = ui.borrow().entry_search_credentials.get_text().unwrap_or("".to_owned()).trim().to_owned();
+        let search_criteria = ui.borrow().entry_search_credentials.get_text().map(|x| x.as_str().to_owned()).unwrap_or("".to_owned()).trim().to_owned();
         let filter_key = if search_criteria.len() > 0 { Some(&search_criteria) } else { None };
         
         store_credentials.clear();
@@ -240,7 +239,7 @@ impl Ui {
         
         let dlg = gtk::MessageDialog::new(
             Some(&ui.dialog_credinfo),
-            gtk::DIALOG_MODAL,
+            gtk::DialogFlags::MODAL,
             gtk::MessageType::Error,
             gtk::ButtonsType::Close,
             &"Copied the password to clipboard"

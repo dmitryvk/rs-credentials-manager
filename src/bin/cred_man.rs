@@ -11,7 +11,6 @@
 extern crate cred_man_lib;
 extern crate linenoise;
 extern crate rustc_serialize;
-extern crate rand;
 extern crate chrono;
 
 use std::cmp;
@@ -20,7 +19,7 @@ use std::io::{Read,Write};
 use std::io;
 use std::str::FromStr;
 use chrono::Local;
-use chrono::naive::datetime::NaiveDateTime;
+use chrono::naive::NaiveDateTime;
 use rustc_serialize::json;
 use cred_man_lib::{Db,DbRecord,DbLocation,DbLoadResult};
 
@@ -381,7 +380,7 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
 }
 
 fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
-    let mut out: Box<Write> = match rest_line {
+    let mut out: Box<dyn Write> = match rest_line {
         x if x != "" => Box::new(std::fs::File::create(&x).unwrap()),
         _ => Box::new(std::io::stdout()),
     };
