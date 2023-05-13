@@ -1,6 +1,3 @@
-extern crate linenoise;
-extern crate cred_man_lib;
-
 use cred_man_lib::encrypted_file;
 
 use std::fs::File;
@@ -26,16 +23,15 @@ fn main() {
         Err(e) => {
             println!("{}", e);
             std::process::exit(1);
-        },
-        Ok(()) => {
-        },
+        }
+        Ok(()) => {}
     }
 }
 
 #[derive(Debug)]
 enum DecryptError {
     WrongPassword,
-    IoError(std::io::Error)
+    IoError(std::io::Error),
 }
 
 impl From<std::io::Error> for DecryptError {

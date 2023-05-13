@@ -2,35 +2,33 @@
 //!
 //! This is a credentials manager program.
 //! It's an interactive command-line application.
-//! 
+//!
 //! # Usage
 //!
-//! Data is stored in ~/.local/share/credentials-manager (it's stored in clear for now).
-//! 
+//! Data is stored in ~/.local/share/credentials-manager.
+//!
 
-extern crate cred_man_lib;
-extern crate linenoise;
-extern crate rustc_serialize;
-extern crate chrono;
-
+use chrono::naive::NaiveDateTime;
+use chrono::Local;
+use cred_man_lib::{Db, DbLoadResult, DbLocation, DbRecord};
+use serde::{Deserialize, Serialize};
 use std::cmp;
 use std::collections::BTreeMap;
-use std::io::{Read,Write};
 use std::io;
+use std::io::{Read, Write};
 use std::str::FromStr;
-use chrono::Local;
-use chrono::naive::NaiveDateTime;
-use rustc_serialize::json;
-use cred_man_lib::{Db,DbRecord,DbLocation,DbLoadResult};
 
 fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
     let idx = cmd_line.find(' ').unwrap_or(cmd_line.len());
     let cmd = cmd_line.get(0..idx).expect("str.get panicked");
-    let rest = cmd_line.get(cmp::min(cmd_line.len(), idx + 1)..cmd_line.len()).expect("str.get panicked").trim();
+    let rest = cmd_line
+        .get(cmp::min(cmd_line.len(), idx + 1)..cmd_line.len())
+        .expect("str.get panicked")
+        .trim();
     (cmd, rest)
 }
 
-#[derive(RustcDecodable, RustcEncodable, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct DbRecordDTO {
     key: String,
     timestamp: String,
@@ -52,7 +50,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
         "import" => Some(import_cmd),
         "rename" => Some(rename_cmd),
         "edit" => Some(edit_cmd),
-        _ => None
+        _ => None,
     }
 }
 
@@ -85,7 +83,7 @@ fn add_linenoise_history(line: &str) {
 fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
-        _ => linenoise::input("Key: ")
+        _ => linenoise::input("Key: "),
     };
     if let Some(key) = arg {
         add_linenoise_history(&key);
@@ -94,7 +92,7 @@ fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
                 Some(_) => {
                     db.save().unwrap();
                     println!("Removed '{:}'", key);
-                },
+                }
                 None => {
                     println!("There is no key '{:}'", key);
                 }
@@ -113,52 +111,53 @@ enum KvResult {
 fn get_kv() -> KvResult {
     match linenoise::input("  data key: ").map(|s| s.trim().to_string()) {
         None => KvResult::Done,
-        Some(key) => {
-            match key {
-                ref x if x == "" => KvResult::Done,
-                key => {
-                    let parts: Vec<_> = key.splitn(2, ' ').map(|s| s.trim().to_string()).collect();
-                    let real_key = parts[0].clone();
-                    if parts.len() == 2 {
-                        KvResult::Some { key: real_key, val: parts[1].clone() }
-                    } else {
-                        match linenoise::input(&format!("    value for {:}: ", key)) {
-                            Some(ref x) if x == "" => KvResult::None,
-                            Some(x) => KvResult::Some { key: key, val: x },
-                            None => KvResult::None,
-                        }
+        Some(key) => match key {
+            ref x if x == "" => KvResult::Done,
+            key => {
+                let parts: Vec<_> = key.splitn(2, ' ').map(|s| s.trim().to_string()).collect();
+                let real_key = parts[0].clone();
+                if parts.len() == 2 {
+                    KvResult::Some {
+                        key: real_key,
+                        val: parts[1].clone(),
+                    }
+                } else {
+                    match linenoise::input(&format!("    value for {:}: ", key)) {
+                        Some(ref x) if x == "" => KvResult::None,
+                        Some(x) => KvResult::Some { key: key, val: x },
+                        None => KvResult::None,
                     }
                 }
             }
-        }
+        },
     }
 }
 
 fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
-        _ => linenoise::input("new key: ")
+        _ => linenoise::input("new key: "),
     };
     if let Some(key) = arg {
         if key.len() > 0 {
             let mut rec = DbRecord {
                 key: key.clone(),
                 timestamp: Local::now().naive_local(),
-                value: BTreeMap::new()
+                value: BTreeMap::new(),
             };
             loop {
                 match get_kv() {
-                    KvResult::Done => { break; },
-                    KvResult::None => { },
+                    KvResult::Done => {
+                        break;
+                    }
+                    KvResult::None => {}
                     KvResult::Some { key, val } => {
                         rec.value.insert(key.clone(), val);
                     }
                 }
             }
             db.data.insert(key.clone(), rec);
-            println!("inserted '{}', now storing {} keys",
-                     key,
-                     db.data.len());
+            println!("inserted '{}', now storing {} keys", key, db.data.len());
             db.save().unwrap();
         }
     }
@@ -172,7 +171,10 @@ struct RenameCmdArgs {
 
 impl RenameCmdArgs {
     fn parse(args_line: &str) -> Option<RenameCmdArgs> {
-        let mut args = args_line.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>();
+        let mut args = args_line
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
         if args.len() > 2 {
             return None;
         }
@@ -182,8 +184,10 @@ impl RenameCmdArgs {
                 Some(k) => {
                     add_linenoise_history(&k);
                     args.push(k);
-                },
-                None => { return None; },
+                }
+                None => {
+                    return None;
+                }
             }
         }
         if args.len() == 1 {
@@ -192,8 +196,10 @@ impl RenameCmdArgs {
                 Some(k) => {
                     add_linenoise_history(&k);
                     args.push(k);
-                },
-                None => { return None; },
+                }
+                None => {
+                    return None;
+                }
             }
         }
         let from;
@@ -211,7 +217,7 @@ fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
     match RenameCmdArgs::parse(args_line) {
         None => {
             println!("Unexpected input; expected: rename [oldname [newname]]");
-        },
+        }
         Some(RenameCmdArgs { from, to }) => {
             if let Some(_) = db.data.get(&to) {
                 println!("Key {} already exists, not renaming", to);
@@ -220,14 +226,14 @@ fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                 match cur {
                     None => {
                         println!("Key {} does not exist", from);
-                    },
+                    }
                     Some(mut v) => {
                         v.key = to.clone();
                         v.timestamp = Local::now().naive_local();
                         db.data.insert(to.clone(), v);
                         db.save().unwrap();
                         println!("Renamed {} to {}", from, to);
-                    },
+                    }
                 }
             }
         }
@@ -259,40 +265,87 @@ fn ask_user(prompt: &str, history: bool) -> String {
 
 impl EditCmd {
     fn parse(args_line: &str) -> Option<Self> {
-        let args = args_line.split_whitespace().map(|s| s.to_string()).collect::<Vec<_>>();
+        let args = args_line
+            .split_whitespace()
+            .map(|s| s.to_string())
+            .collect::<Vec<_>>();
         let mut it = args.into_iter();
-        let key = it.next().unwrap_or_else(|| ask_user("Enter the key to be edited: ", true));
+        let key = it
+            .next()
+            .unwrap_or_else(|| ask_user("Enter the key to be edited: ", true));
         if key.is_empty() {
             return None;
         }
-        let cmd = it.next().unwrap_or_else(|| ask_user("Enter the edit command (del, add, update, rename): ", true));
+        let cmd = it.next().unwrap_or_else(|| {
+            ask_user("Enter the edit command (del, add, update, rename): ", true)
+        });
         match cmd.as_ref() {
             "del" => {
-                let subkey = it.next().unwrap_or_else(|| ask_user("Enter the subkey: ", true));
-                if subkey.is_empty() { return None; }
-                return Some(EditCmd { key: key, op: EditCmdOperation::Del(subkey) });
-            },
+                let subkey = it
+                    .next()
+                    .unwrap_or_else(|| ask_user("Enter the subkey: ", true));
+                if subkey.is_empty() {
+                    return None;
+                }
+                return Some(EditCmd {
+                    key: key,
+                    op: EditCmdOperation::Del(subkey),
+                });
+            }
             "add" => {
-                let subkey = it.next().unwrap_or_else(|| ask_user("Enter the subkey: ", true));
-                if subkey.is_empty() { return None; }
-                let value = it.next().unwrap_or_else(|| ask_user("Enter the value: ", true));
-                if value.is_empty() { return None; }
-                return Some(EditCmd { key: key, op: EditCmdOperation::Add(subkey, value) });
-            },
+                let subkey = it
+                    .next()
+                    .unwrap_or_else(|| ask_user("Enter the subkey: ", true));
+                if subkey.is_empty() {
+                    return None;
+                }
+                let value = it
+                    .next()
+                    .unwrap_or_else(|| ask_user("Enter the value: ", true));
+                if value.is_empty() {
+                    return None;
+                }
+                return Some(EditCmd {
+                    key: key,
+                    op: EditCmdOperation::Add(subkey, value),
+                });
+            }
             "update" => {
-                let subkey = it.next().unwrap_or_else(|| ask_user("Enter the subkey: ", true));
-                if subkey.is_empty() { return None; }
-                let value = it.next().unwrap_or_else(|| ask_user("Enter the value: ", true));
-                if value.is_empty() { return None; }
-                return Some(EditCmd { key: key, op: EditCmdOperation::Update(subkey, value) });
-            },
+                let subkey = it
+                    .next()
+                    .unwrap_or_else(|| ask_user("Enter the subkey: ", true));
+                if subkey.is_empty() {
+                    return None;
+                }
+                let value = it
+                    .next()
+                    .unwrap_or_else(|| ask_user("Enter the value: ", true));
+                if value.is_empty() {
+                    return None;
+                }
+                return Some(EditCmd {
+                    key: key,
+                    op: EditCmdOperation::Update(subkey, value),
+                });
+            }
             "rename" => {
-                let subkey = it.next().unwrap_or_else(|| ask_user("Enter the subkey: ", true));
-                if subkey.is_empty() { return None; }
-                let new_subkey = it.next().unwrap_or_else(|| ask_user("Enter the new subkey name: ", true));
-                if new_subkey.is_empty() { return None; }
-                return Some(EditCmd { key: key, op: EditCmdOperation::Rename(subkey, new_subkey) });
-            },
+                let subkey = it
+                    .next()
+                    .unwrap_or_else(|| ask_user("Enter the subkey: ", true));
+                if subkey.is_empty() {
+                    return None;
+                }
+                let new_subkey = it
+                    .next()
+                    .unwrap_or_else(|| ask_user("Enter the new subkey name: ", true));
+                if new_subkey.is_empty() {
+                    return None;
+                }
+                return Some(EditCmd {
+                    key: key,
+                    op: EditCmdOperation::Rename(subkey, new_subkey),
+                });
+            }
             _ => {
                 return None;
             }
@@ -314,60 +367,54 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                 None => {
                     should_save = false;
                     msg = format!("Entry {} not found", cmd.key);
-                },
-                Some(entry) => {
-                    match cmd.op {
-                        EditCmdOperation::Del(subkey) => {
-                            match entry.value.remove(&subkey) {
-                                Some(_) => {
-                                    should_save = true;
-                                    msg = format!("Subkey {} removed", subkey);
-                                },
-                                None => {
-                                    should_save = false;
-                                    msg = format!("Entry {} does not contain subkey {}", cmd.key, subkey);
-                                }
-                            }
-                        },
-                        EditCmdOperation::Add(subkey, value) => {
-                            if let None = entry.value.get(&subkey) {
-                                entry.value.insert(subkey.clone(), value);
-                                should_save = true;
-                                msg = format!("Added subkey {} for {}", subkey, cmd.key);
-                            } else {
-                                should_save = false;
-                                msg = format!("Subkey {} already exists", subkey);
-                            }
-                        },
-                        EditCmdOperation::Update(subkey, value) => {
-                            match entry.value.get_mut(&subkey) {
-                                None => {
-                                    should_save = false;
-                                    msg = format!("Subkey {} does not exist", subkey);
-                                },
-                                Some(subvalue) => {
-                                    *subvalue = value;
-                                    should_save = true;
-                                    msg = format!("Updated subkey {} for {}", subkey, cmd.key);
-                                },
-                            }
-                        },
-                        EditCmdOperation::Rename(subkey, newsubkey) => {
-                            let cur = entry.value.remove(&subkey);
-                            match cur {
-                                None => {
-                                    should_save = false;
-                                    msg = format!("Subkey {} does not exist", subkey);
-                                },
-                                Some(cur) => {
-                                    entry.value.insert(newsubkey.clone(), cur);
-                                    should_save = true;
-                                    msg = format!("Renamed subkey {} to {}", subkey, newsubkey);
-                                }
-                            }
-                        },
-                    }
                 }
+                Some(entry) => match cmd.op {
+                    EditCmdOperation::Del(subkey) => match entry.value.remove(&subkey) {
+                        Some(_) => {
+                            should_save = true;
+                            msg = format!("Subkey {} removed", subkey);
+                        }
+                        None => {
+                            should_save = false;
+                            msg = format!("Entry {} does not contain subkey {}", cmd.key, subkey);
+                        }
+                    },
+                    EditCmdOperation::Add(subkey, value) => {
+                        if let None = entry.value.get(&subkey) {
+                            entry.value.insert(subkey.clone(), value);
+                            should_save = true;
+                            msg = format!("Added subkey {} for {}", subkey, cmd.key);
+                        } else {
+                            should_save = false;
+                            msg = format!("Subkey {} already exists", subkey);
+                        }
+                    }
+                    EditCmdOperation::Update(subkey, value) => match entry.value.get_mut(&subkey) {
+                        None => {
+                            should_save = false;
+                            msg = format!("Subkey {} does not exist", subkey);
+                        }
+                        Some(subvalue) => {
+                            *subvalue = value;
+                            should_save = true;
+                            msg = format!("Updated subkey {} for {}", subkey, cmd.key);
+                        }
+                    },
+                    EditCmdOperation::Rename(subkey, newsubkey) => {
+                        let cur = entry.value.remove(&subkey);
+                        match cur {
+                            None => {
+                                should_save = false;
+                                msg = format!("Subkey {} does not exist", subkey);
+                            }
+                            Some(cur) => {
+                                entry.value.insert(newsubkey.clone(), cur);
+                                should_save = true;
+                                msg = format!("Renamed subkey {} to {}", subkey, newsubkey);
+                            }
+                        }
+                    }
+                },
             }
             if should_save {
                 db.save().unwrap();
@@ -391,11 +438,11 @@ fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
             value: r.value.clone(),
         });
     }
-    let contents = json::as_pretty_json(&dto).to_string();
+    let contents = serde_json::to_string_pretty(&dto).expect("DbRecordDTO is json-serializable");
     out.write_all(contents.as_bytes()).unwrap();
     out.write_all(b"\n").unwrap();
     out.flush().unwrap();
-    
+
     true
 }
 
@@ -403,7 +450,7 @@ fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
     let mut contents = String::new();
     let mut f = std::fs::File::open(file_name)?;
     f.read_to_string(&mut contents)?;
-    let dto: Vec<DbRecordDTO> = json::decode(&contents).unwrap();
+    let dto: Vec<DbRecordDTO> = serde_json::from_str(&contents).unwrap();
     for r in dto {
         let v = DbRecord {
             key: r.key,
@@ -430,19 +477,19 @@ fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     };
 
     match import_from(db, &filename) {
-        Ok(()) => { },
+        Ok(()) => {}
         Err(e) => {
             println!("Error: {:?}", e);
         }
     }
-    
+
     true
 }
 
 fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
-        _ => linenoise::input("find key: ")
+        _ => linenoise::input("find key: "),
     };
     if let Some(key) = arg {
         add_linenoise_history(&key);
@@ -467,7 +514,7 @@ fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
 fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
         x if x != "" => Some(x.to_string()),
-        _ => linenoise::input("find key: ")
+        _ => linenoise::input("find key: "),
     };
     if let Some(key) = arg {
         add_linenoise_history(&key);
@@ -495,7 +542,9 @@ impl ListCmd {
         } else if args.len() == 1 && args[0] == "recent" {
             Some(ListCmd::Recent(None))
         } else if args.len() == 2 && args[0] == "recent" {
-            usize::from_str(args[1]).ok().map(|c| ListCmd::Recent(Some(c)))
+            usize::from_str(args[1])
+                .ok()
+                .map(|c| ListCmd::Recent(Some(c)))
         } else {
             None
         }
@@ -509,7 +558,7 @@ fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
             for v in db.data.values() {
                 println!("{} ({})", v.key, v.timestamp.format("%Y-%m-%d %H:%M:%S"));
             }
-        },
+        }
         Some(ListCmd::Recent(opt_count)) => {
             let mut entries = db.data.values().collect::<Vec<_>>();
             entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
@@ -525,7 +574,7 @@ fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
             for v in entries.iter() {
                 println!("{} ({})", v.key, v.timestamp.format("%Y-%m-%d %H:%M:%S"));
             }
-        },
+        }
         None => {
             println!("Unrecognized arguments for list; expected: list [recent [count]]");
         }
@@ -536,7 +585,7 @@ fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
 fn execute_cmd(db: &mut Db, cmd_line: &str) -> bool {
     let (cmd, args) = parse_cmd_line(cmd_line);
     match get_command_handler(cmd) {
-        Some(handler) => { handler(db, cmd, args) }
+        Some(handler) => handler(db, cmd, args),
         None => {
             println!("Unknown command {:}; try `help'", cmd);
             true
@@ -560,12 +609,17 @@ fn main() {
     let mut db;
     let password = linenoise::input("Enter password: ").unwrap();
     match Db::load(&db_location, &password) {
-        Ok(DbLoadResult::Loaded(loaded_db)) => { db = loaded_db; },
+        Ok(DbLoadResult::Loaded(loaded_db)) => {
+            db = loaded_db;
+        }
         Ok(DbLoadResult::WrongPassword) => {
             println!("Wrong password");
             return;
-        },
-        Err(e) => { println!("error: {:}", e); return; },
+        }
+        Err(e) => {
+            println!("error: {:}", e);
+            return;
+        }
     }
     linenoise::clear_screen();
     while let Some(cmd) = linenoise::input("> ") {

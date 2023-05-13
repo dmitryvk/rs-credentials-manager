@@ -1,14 +1,11 @@
-extern crate linenoise;
-extern crate rustc_serialize;
-extern crate chrono;
-
+use chrono::naive::NaiveDateTime;
+use chrono::Local;
+use serde::Deserialize;
+use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use chrono::Local;
-use chrono::naive::NaiveDateTime;
-use rustc_serialize::json;
 
 pub mod encrypted_file;
 
@@ -34,7 +31,7 @@ impl Db {
     }
 }
 
-#[derive(RustcDecodable, RustcEncodable, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 struct DbRecordDTO {
     key: String,
     timestamp: String,
@@ -42,7 +39,6 @@ struct DbRecordDTO {
 }
 
 const DTO_TIME_FORMAT: &'static str = "%Y-%m-%dT%H:%M:%S";
-
 
 #[derive(Clone)]
 pub enum DbLocation {
@@ -64,10 +60,10 @@ fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
             path.push(".local");
             path.push("share");
             path.push("cred-man");
-        },
+        }
         &DbLocation::SpecifiedDirectory(ref dir) => {
             path = PathBuf::from(&dir);
-        },
+        }
     }
     std::fs::create_dir_all(&path).unwrap();
     path.push(match kind {
@@ -76,7 +72,7 @@ fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
         PathKind::Backup => format!(
             "keys.backup.{}.db",
             Local::now().format("%Y%m%d_%H%M%S").to_string()
-                )
+        ),
     });
     path
 }
@@ -91,28 +87,36 @@ impl Db {
         let path = get_db_path(PathKind::Main, location);
         match fs::metadata(&path) {
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => {
-                println!("Path {} not found, will create new database", path.to_string_lossy());
+                println!(
+                    "Path {} not found, will create new database",
+                    path.to_string_lossy()
+                );
                 let db = Db::new(password.to_owned(), location.clone());
                 Ok(DbLoadResult::Loaded(db))
-            },
+            }
             Err(e) => Err(e),
             Ok(_) => {
                 let data = encrypted_file::parse_file(&path)?;
                 match encrypted_file::decrypt(&data, &password) {
-                    None => {
-                        Ok(DbLoadResult::WrongPassword)
-                    },
+                    None => Ok(DbLoadResult::WrongPassword),
                     Some(contents) => {
-                        let dto: Vec<DbRecordDTO> = json::decode(&contents).unwrap();
+                        let dto: Vec<DbRecordDTO> = serde_json::from_str(&contents).unwrap();
                         let mut db = Db::new(password.to_owned(), location.clone());
                         //println!("db = {:#?}", dto);
                         for r in dto.into_iter() {
                             let k = r.key.clone();
-                            db.data.insert(k, DbRecord {
-                                key: r.key,
-                                timestamp: NaiveDateTime::parse_from_str(&r.timestamp, DTO_TIME_FORMAT).unwrap(),
-                                value: r.value,
-                            });
+                            db.data.insert(
+                                k,
+                                DbRecord {
+                                    key: r.key,
+                                    timestamp: NaiveDateTime::parse_from_str(
+                                        &r.timestamp,
+                                        DTO_TIME_FORMAT,
+                                    )
+                                    .unwrap(),
+                                    value: r.value,
+                                },
+                            );
                         }
                         Ok(DbLoadResult::Loaded(db))
                     }
@@ -130,11 +134,11 @@ impl Db {
             Ok(_) => {
                 //println!("copy main to backup");
                 fs::copy(&main_path, &backup_path)?;
-            },
+            }
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => (),
             Err(e) => {
                 return Err(e);
-            },
+            }
         };
         let mut dto: Vec<DbRecordDTO> = Vec::new();
         for r in self.data.values() {
@@ -144,7 +148,7 @@ impl Db {
                 value: r.value.clone(),
             });
         }
-        let contents = json::encode(&dto).unwrap();
+        let contents = serde_json::to_string(&dto).unwrap();
         //println!("contents: {}", contents);
         let data = encrypted_file::encrypt(&contents, &self.password);
         //println!("encrypted");

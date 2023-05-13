@@ -1,15 +1,7 @@
-extern crate cred_man_lib;
-extern crate linenoise;
-extern crate rustc_serialize;
-extern crate chrono;
-
-extern crate gtk;
-extern crate glib;
-
+use cred_man_lib::{Db, DbLoadResult, DbLocation};
 use gtk::prelude::*;
-use std::rc::Rc;
 use std::cell::RefCell;
-use cred_man_lib::{Db, DbLocation, DbLoadResult};
+use std::rc::Rc;
 
 const BUILDER_UI: &'static str = include_str!("cred_man_gtk.ui");
 
@@ -21,12 +13,12 @@ struct Ui {
     dlg_password: gtk::Dialog,
     entry_password: gtk::Entry,
     entry_search_credentials: gtk::Entry,
-    
+
     dialog_credinfo: gtk::Dialog,
     label_credinfo_key: gtk::Label,
     label_credinfo_attr: gtk::Label,
     entry_credinfo_value: gtk::Entry,
-    
+
     db: Option<Db>,
     credinfo_value: Option<(String, String, String)>,
 }
@@ -34,28 +26,48 @@ struct Ui {
 impl Ui {
     pub fn new(db_location: DbLocation) -> Rc<RefCell<Self>> {
         let b = gtk::Builder::new();
-        
-        b.add_from_string(BUILDER_UI).expect("Unable to load GtkBuilder definition");
-        
-        let w: gtk::Window = b.get_object("wndMain").expect("Unable to find wndMain in GtkBuilder definition");
-        
-        let tree_credentials: gtk::TreeView = b.get_object("treeCredentials").expect("Unable to find treeCredentials");
-        
-        let store_credentials: gtk::TreeStore = b.get_object("storeCredentials").expect("Unable to find storeCredentials");
-        
-        let btn_unlock: gtk::ToolButton = b.get_object("btnUnlock").expect("Unable to find btnUnlock");
-        
-        let dlg_password: gtk::Dialog = b.get_object("dlgPassword").expect("Unable to find dlgPassword");
-        
-        let entry_password: gtk::Entry = b.get_object("entryPassword").expect("Unable to find entryPassword");
-        
-        let entry_search_credentials: gtk::Entry = b.get_object("entrySearchCredentials").expect("Unable to find entrySearchCredentials");
-        
-        let dialog_credinfo: gtk::Dialog = b.get_object("dialog_credinfo").expect("Unable to find dialog_credinfo");
-        let label_credinfo_key: gtk::Label = b.get_object("label_credinfo_key").expect("Unable to find label_credinfo_key");
-        let label_credinfo_attr: gtk::Label = b.get_object("label_credinfo_attr").expect("Unable to find label_credinfo_attr");
-        let entry_credinfo_value: gtk::Entry = b.get_object("entry_credinfo_value").expect("Unable to find entry_credinfo_value");
-        
+
+        b.add_from_string(BUILDER_UI)
+            .expect("Unable to load GtkBuilder definition");
+
+        let w: gtk::Window = b
+            .object("wndMain")
+            .expect("Unable to find wndMain in GtkBuilder definition");
+
+        let tree_credentials: gtk::TreeView = b
+            .object("treeCredentials")
+            .expect("Unable to find treeCredentials");
+
+        let store_credentials: gtk::TreeStore = b
+            .object("storeCredentials")
+            .expect("Unable to find storeCredentials");
+
+        let btn_unlock: gtk::ToolButton = b.object("btnUnlock").expect("Unable to find btnUnlock");
+
+        let dlg_password: gtk::Dialog =
+            b.object("dlgPassword").expect("Unable to find dlgPassword");
+
+        let entry_password: gtk::Entry = b
+            .object("entryPassword")
+            .expect("Unable to find entryPassword");
+
+        let entry_search_credentials: gtk::Entry = b
+            .object("entrySearchCredentials")
+            .expect("Unable to find entrySearchCredentials");
+
+        let dialog_credinfo: gtk::Dialog = b
+            .object("dialog_credinfo")
+            .expect("Unable to find dialog_credinfo");
+        let label_credinfo_key: gtk::Label = b
+            .object("label_credinfo_key")
+            .expect("Unable to find label_credinfo_key");
+        let label_credinfo_attr: gtk::Label = b
+            .object("label_credinfo_attr")
+            .expect("Unable to find label_credinfo_attr");
+        let entry_credinfo_value: gtk::Entry = b
+            .object("entry_credinfo_value")
+            .expect("Unable to find entry_credinfo_value");
+
         let result = Rc::new(RefCell::new(Ui {
             window: w.clone(),
             tree_credentials: tree_credentials.clone(),
@@ -71,114 +83,125 @@ impl Ui {
             db: None,
             credinfo_value: None,
         }));
-        
+
         let result2 = result.clone();
         btn_unlock.connect_clicked(move |_| {
             result2.borrow().dlg_password.show_all();
         });
-        
+
         let result2 = result.clone();
         dlg_password.connect_delete_event(move |_, _| {
             result2.borrow().dlg_password.hide();
             Inhibit(true)
         });
-        
+
         let result2 = result.clone();
         dlg_password.connect_response(move |_, response| {
             if response == gtk::ResponseType::Other(5) {
-                let password = result2.borrow().entry_password.get_text().map(|x| x.as_str().to_owned()).unwrap_or("".to_owned());
-                
+                let password = result2.borrow().entry_password.text().as_str().to_owned();
+
                 match Db::load(&db_location, &password) {
                     Ok(DbLoadResult::Loaded(db)) => {
                         result2.borrow_mut().db = Some(db);
-                
-                        result2.borrow().entry_search_credentials.set_sensitive(true);
+
+                        result2
+                            .borrow()
+                            .entry_search_credentials
+                            .set_sensitive(true);
                         result2.borrow().tree_credentials.set_sensitive(true);
                         result2.borrow().btn_unlock.set_sensitive(false);
                         result2.borrow().dlg_password.hide();
-                        
+
                         Ui::refresh_tree(&result2);
-                    },
+                    }
                     Ok(DbLoadResult::WrongPassword) => {
                         let dlg = gtk::MessageDialog::new(
                             Some(&result2.borrow().dlg_password),
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Close,
-                            &"Wrong password"
+                            &"Wrong password",
                         );
                         dlg.run();
-                        dlg.destroy();
+                        dlg.close();
                         return;
-                    },
+                    }
                     Err(e) => {
                         let dlg = gtk::MessageDialog::new(
                             Some(&result2.borrow().dlg_password),
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Close,
-                            &format!("error: {:}", e)
+                            &format!("error: {:}", e),
                         );
                         dlg.run();
-                        dlg.destroy();
+                        dlg.close();
                         return;
-                    },
+                    }
                 }
             }
         });
-        
+
         let result2 = result.clone();
         tree_credentials.connect_row_activated(move |_, path, _| {
             let store = result2.borrow().store_credentials.clone();
-            let iter = store.get_iter(path).unwrap();
+            let iter = store.iter(path).unwrap();
             let parent_iter = match store.iter_parent(&iter) {
                 None => return,
                 Some(it) => it,
             };
-            
-            let key = store.get_value(&parent_iter, 0).get::<String>().unwrap();
-            let attr_name = store.get_value(&iter, 0).get::<String>().unwrap();
+
+            let key = store.value(&parent_iter, 0).get::<String>().unwrap();
+            let attr_name = store.value(&iter, 0).get::<String>().unwrap();
             Ui::show_attr(&result2, &key, &attr_name);
         });
-        
+
         let result2 = result.clone();
         entry_search_credentials.connect_changed(move |_| {
             Ui::refresh_tree(&result2);
         });
-        
+
         let result2 = result.clone();
-        entry_credinfo_value.connect_icon_release(move |_, position, _| {
-            match position {
-                gtk::EntryIconPosition::Primary => Ui::credinfo_reveal(&result2),
-                gtk::EntryIconPosition::Secondary => Ui::credinfo_copy(&result2),
-                _ => {}
-            }
+        entry_credinfo_value.connect_icon_release(move |_, position, _| match position {
+            gtk::EntryIconPosition::Primary => Ui::credinfo_reveal(&result2),
+            gtk::EntryIconPosition::Secondary => Ui::credinfo_copy(&result2),
+            _ => {}
         });
-        
+
         w.connect_delete_event(|_, _| {
             gtk::main_quit();
             Inhibit(false)
         });
-        
+
         entry_search_credentials.set_sensitive(false);
         tree_credentials.set_sensitive(false);
-        
+
         w.show_all();
-        
+
         result
     }
-    
+
     fn refresh_tree(ui: &Rc<RefCell<Self>>) {
         let store_credentials = ui.borrow().store_credentials.clone();
-        let search_criteria = ui.borrow().entry_search_credentials.get_text().map(|x| x.as_str().to_owned()).unwrap_or("".to_owned()).trim().to_owned();
-        let filter_key = if search_criteria.len() > 0 { Some(&search_criteria) } else { None };
-        
+        let search_criteria = ui
+            .borrow()
+            .entry_search_credentials
+            .text()
+            .as_str()
+            .trim()
+            .to_owned();
+        let filter_key = if search_criteria.len() > 0 {
+            Some(&search_criteria)
+        } else {
+            None
+        };
+
         store_credentials.clear();
 
         for (name, record) in ui.borrow().db.as_ref().unwrap().data.iter() {
             let is_match = match filter_key {
                 None => true,
-                Some(key) => name.contains(key)
+                Some(key) => name.contains(key),
             };
             if is_match {
                 let it = store_credentials.append(None);
@@ -190,62 +213,61 @@ impl Ui {
             }
         }
     }
-    
+
     fn show_attr(ui_ref: &Rc<RefCell<Self>>, key: &str, attr: &str) {
-        
         let dialog_credinfo;
         let label_credinfo_key;
-        
+
         {
             let mut ui = &mut *ui_ref.borrow_mut();
-            
+
             dialog_credinfo = ui.dialog_credinfo.clone();
             label_credinfo_key = ui.label_credinfo_key.clone();
             let label_credinfo_attr = ui.label_credinfo_attr.clone();
             let entry_credinfo_value = ui.entry_credinfo_value.clone();
-            
+
             let db = ui.db.as_ref().unwrap();
-            
+
             let value = db.data.get(key).unwrap().value.get(attr).unwrap();
-            
+
             ui.credinfo_value = Some((key.to_owned(), attr.to_owned(), value.clone()));
-            
+
             label_credinfo_key.set_text(key);
             label_credinfo_attr.set_text(attr);
             entry_credinfo_value.set_text("<click \"refresh\" to reveal>");
         }
-        
+
         dialog_credinfo.run();
         dialog_credinfo.hide();
-        
+
         {
             let mut ui = &mut *ui_ref.borrow_mut();
             ui.credinfo_value = None;
         }
     }
-    
+
     fn credinfo_reveal(ui_ref: &Rc<RefCell<Self>>) {
         let ui = &*ui_ref.borrow_mut();
         let value = ui.credinfo_value.as_ref().unwrap().2.clone();
         ui.entry_credinfo_value.set_text(&value);
     }
-    
+
     fn credinfo_copy(ui_ref: &Rc<RefCell<Self>>) {
         let ui = &*ui_ref.borrow();
         let value = ui.credinfo_value.as_ref().unwrap().2.clone();
-        let display = ui.window.get_display().unwrap();
-        let clipboard = gtk::Clipboard::get_default(&display).unwrap();
+        let display = ui.window.display();
+        let clipboard = gtk::Clipboard::default(&display).unwrap();
         clipboard.set_text(&value);
-        
+
         let dlg = gtk::MessageDialog::new(
             Some(&ui.dialog_credinfo),
             gtk::DialogFlags::MODAL,
             gtk::MessageType::Error,
             gtk::ButtonsType::Close,
-            &"Copied the password to clipboard"
+            &"Copied the password to clipboard",
         );
         dlg.run();
-        dlg.destroy();
+        dlg.close();
     }
 }
 
@@ -264,8 +286,8 @@ fn main() {
     let db_location = parse_args();
 
     gtk::init().expect("Unable to initialize Gtk+");
-    
+
     let _ = Ui::new(db_location);
-    
+
     gtk::main();
 }
