@@ -19,12 +19,9 @@ fn main() {
         }
         Ok(())
     };
-    match f() {
-        Err(e) => {
-            println!("{}", e);
-            std::process::exit(1);
-        }
-        Ok(()) => {}
+    if let Err(e) = f() {
+        println!("{}", e);
+        std::process::exit(1);
     }
 }
 
@@ -44,13 +41,13 @@ impl std::fmt::Display for DecryptError {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             &DecryptError::WrongPassword => write!(f, "Wrong password"),
-            &DecryptError::IoError(ref e) => write!(f, "{}", e),
+            DecryptError::IoError(e) => write!(f, "{}", e),
         }
     }
 }
 
 fn do_decrypt(path: &str) -> Result<String, DecryptError> {
-    let encrypted_data = encrypted_file::parse_file(&path)?;
+    let encrypted_data = encrypted_file::parse_file(path)?;
     let password = linenoise::input("Enter password: ").unwrap();
     let maybe_plaintext = encrypted_file::decrypt(&encrypted_data, &password);
     match maybe_plaintext {

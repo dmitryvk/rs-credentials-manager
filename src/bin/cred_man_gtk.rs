@@ -3,7 +3,7 @@ use gtk::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
 
-const BUILDER_UI: &'static str = include_str!("cred_man_gtk.ui");
+const BUILDER_UI: &str = include_str!("cred_man_gtk.ui");
 
 struct Ui {
     window: gtk::Window,
@@ -71,14 +71,14 @@ impl Ui {
         let result = Rc::new(RefCell::new(Ui {
             window: w.clone(),
             tree_credentials: tree_credentials.clone(),
-            store_credentials: store_credentials.clone(),
+            store_credentials,
             btn_unlock: btn_unlock.clone(),
             dlg_password: dlg_password.clone(),
-            entry_password: entry_password.clone(),
+            entry_password,
             entry_search_credentials: entry_search_credentials.clone(),
-            dialog_credinfo: dialog_credinfo.clone(),
-            label_credinfo_key: label_credinfo_key.clone(),
-            label_credinfo_attr: label_credinfo_attr.clone(),
+            dialog_credinfo,
+            label_credinfo_key,
+            label_credinfo_attr,
             entry_credinfo_value: entry_credinfo_value.clone(),
             db: None,
             credinfo_value: None,
@@ -120,11 +120,10 @@ impl Ui {
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Close,
-                            &"Wrong password",
+                            "Wrong password",
                         );
                         dlg.run();
                         dlg.close();
-                        return;
                     }
                     Err(e) => {
                         let dlg = gtk::MessageDialog::new(
@@ -136,7 +135,6 @@ impl Ui {
                         );
                         dlg.run();
                         dlg.close();
-                        return;
                     }
                 }
             }
@@ -190,7 +188,7 @@ impl Ui {
             .as_str()
             .trim()
             .to_owned();
-        let filter_key = if search_criteria.len() > 0 {
+        let filter_key = if !search_criteria.is_empty() {
             Some(&search_criteria)
         } else {
             None
@@ -264,7 +262,7 @@ impl Ui {
             gtk::DialogFlags::MODAL,
             gtk::MessageType::Error,
             gtk::ButtonsType::Close,
-            &"Copied the password to clipboard",
+            "Copied the password to clipboard",
         );
         dlg.run();
         dlg.close();
@@ -273,7 +271,7 @@ impl Ui {
 
 fn parse_args() -> DbLocation {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.len() == 0 {
+    if args.is_empty() {
         DbLocation::DotLocal
     } else {
         let mut it = args.into_iter();

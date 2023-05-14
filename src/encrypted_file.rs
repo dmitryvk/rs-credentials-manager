@@ -35,7 +35,7 @@ pub struct EncryptedFileContent {
 
 pub fn encrypt(plaintext: &str, password: &str) -> EncryptedFileContent {
     let salt = generate_salt(16);
-    let key = derive_key(&salt, &password);
+    let key = derive_key(&salt, password);
     let nonce = generate_salt(12);
     let mut tag = vec![0u8; 16];
     let aad = b"cred-man";
@@ -48,10 +48,10 @@ pub fn encrypt(plaintext: &str, password: &str) -> EncryptedFileContent {
     );
 
     EncryptedFileContent {
-        salt: salt,
-        nonce: nonce,
-        tag: tag,
-        ciphertext: ciphertext,
+        salt,
+        nonce,
+        tag,
+        ciphertext,
     }
 }
 
@@ -63,7 +63,7 @@ fn read_bytes(source: &mut dyn Read, buffer: &mut [u8]) -> io::Result<()> {
     Ok(())
 }
 
-const CRED_MAN_MAGIC: &'static [u8] = b"CREDMAN";
+const CRED_MAN_MAGIC: &[u8] = b"CREDMAN";
 
 const CRED_MAN_VERSION: i32 = 1;
 
@@ -121,15 +121,15 @@ pub fn parse_file<P: AsRef<Path>>(file_name: P) -> io::Result<EncryptedFileConte
     }
 
     Ok(EncryptedFileContent {
-        salt: salt,
-        nonce: nonce,
-        tag: tag,
-        ciphertext: ciphertext,
+        salt,
+        nonce,
+        tag,
+        ciphertext,
     })
 }
 
 pub fn decrypt(data: &EncryptedFileContent, password: &str) -> Option<String> {
-    let key = derive_key(&data.salt, &password);
+    let key = derive_key(&data.salt, password);
     let aad = b"cred-man";
 
     let mut deciphered = vec![0u8; data.ciphertext.len()];

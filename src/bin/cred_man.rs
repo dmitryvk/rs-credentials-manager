@@ -35,7 +35,7 @@ struct DbRecordDTO {
     value: BTreeMap<String, String>,
 }
 
-const DTO_TIME_FORMAT: &'static str = "%Y-%m-%dT%H:%M:%S";
+const DTO_TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 
 fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
     match cmd {
@@ -82,12 +82,12 @@ fn add_linenoise_history(line: &str) {
 
 fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
-        x if x != "" => Some(x.to_string()),
+        x if !x.is_empty() => Some(x.to_string()),
         _ => linenoise::input("Key: "),
     };
     if let Some(key) = arg {
         add_linenoise_history(&key);
-        if key.len() > 0 {
+        if !key.is_empty() {
             match db.data.remove(&key) {
                 Some(_) => {
                     db.save().unwrap();
@@ -112,7 +112,7 @@ fn get_kv() -> KvResult {
     match linenoise::input("  data key: ").map(|s| s.trim().to_string()) {
         None => KvResult::Done,
         Some(key) => match key {
-            ref x if x == "" => KvResult::Done,
+            ref x if x.is_empty() => KvResult::Done,
             key => {
                 let parts: Vec<_> = key.splitn(2, ' ').map(|s| s.trim().to_string()).collect();
                 let real_key = parts[0].clone();
@@ -123,8 +123,8 @@ fn get_kv() -> KvResult {
                     }
                 } else {
                     match linenoise::input(&format!("    value for {:}: ", key)) {
-                        Some(ref x) if x == "" => KvResult::None,
-                        Some(x) => KvResult::Some { key: key, val: x },
+                        Some(ref x) if x.is_empty() => KvResult::None,
+                        Some(x) => KvResult::Some { key, val: x },
                         None => KvResult::None,
                     }
                 }
@@ -135,11 +135,11 @@ fn get_kv() -> KvResult {
 
 fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
-        x if x != "" => Some(x.to_string()),
+        x if !x.is_empty() => Some(x.to_string()),
         _ => linenoise::input("new key: "),
     };
     if let Some(key) = arg {
-        if key.len() > 0 {
+        if !key.is_empty() {
             let mut rec = DbRecord {
                 key: key.clone(),
                 timestamp: Local::now().naive_local(),
@@ -178,7 +178,7 @@ impl RenameCmdArgs {
         if args.len() > 2 {
             return None;
         }
-        if args.len() == 0 {
+        if args.is_empty() {
             let k = linenoise::input("old key name: ");
             match k {
                 Some(k) => {
@@ -209,7 +209,7 @@ impl RenameCmdArgs {
             from = it.next().unwrap();
             to = it.next().unwrap();
         }
-        Some(RenameCmdArgs { from: from, to: to })
+        Some(RenameCmdArgs { from, to })
     }
 }
 
@@ -219,7 +219,7 @@ fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
             println!("Unexpected input; expected: rename [oldname [newname]]");
         }
         Some(RenameCmdArgs { from, to }) => {
-            if let Some(_) = db.data.get(&to) {
+            if db.data.get(&to).is_some() {
                 println!("Key {} already exists, not renaming", to);
             } else {
                 let cur = db.data.remove(&from);
@@ -287,10 +287,10 @@ impl EditCmd {
                 if subkey.is_empty() {
                     return None;
                 }
-                return Some(EditCmd {
-                    key: key,
+                Some(EditCmd {
+                    key,
                     op: EditCmdOperation::Del(subkey),
-                });
+                })
             }
             "add" => {
                 let subkey = it
@@ -305,10 +305,10 @@ impl EditCmd {
                 if value.is_empty() {
                     return None;
                 }
-                return Some(EditCmd {
-                    key: key,
+                Some(EditCmd {
+                    key,
                     op: EditCmdOperation::Add(subkey, value),
-                });
+                })
             }
             "update" => {
                 let subkey = it
@@ -323,10 +323,10 @@ impl EditCmd {
                 if value.is_empty() {
                     return None;
                 }
-                return Some(EditCmd {
-                    key: key,
+                Some(EditCmd {
+                    key,
                     op: EditCmdOperation::Update(subkey, value),
-                });
+                })
             }
             "rename" => {
                 let subkey = it
@@ -341,13 +341,13 @@ impl EditCmd {
                 if new_subkey.is_empty() {
                     return None;
                 }
-                return Some(EditCmd {
-                    key: key,
+                Some(EditCmd {
+                    key,
                     op: EditCmdOperation::Rename(subkey, new_subkey),
-                });
+                })
             }
             _ => {
-                return None;
+                None
             }
         }
     }
@@ -380,7 +380,7 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                         }
                     },
                     EditCmdOperation::Add(subkey, value) => {
-                        if let None = entry.value.get(&subkey) {
+                        if entry.value.get(&subkey).is_none() {
                             entry.value.insert(subkey.clone(), value);
                             should_save = true;
                             msg = format!("Added subkey {} for {}", subkey, cmd.key);
@@ -427,7 +427,7 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
 
 fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let mut out: Box<dyn Write> = match rest_line {
-        x if x != "" => Box::new(std::fs::File::create(&x).unwrap()),
+        x if !x.is_empty() => Box::new(std::fs::File::create(x).unwrap()),
         _ => Box::new(std::io::stdout()),
     };
     let mut dto = Vec::new();
@@ -468,7 +468,7 @@ fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
 
 fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let filename = match rest_line {
-        x if x != "" => x.trim().to_string(),
+        x if !x.is_empty() => x.trim().to_string(),
         _ => {
             let tmp = linenoise::input("Enter filename: ").unwrap();
             add_linenoise_history(&tmp);
@@ -488,12 +488,12 @@ fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
 
 fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
-        x if x != "" => Some(x.to_string()),
+        x if !x.is_empty() => Some(x.to_string()),
         _ => linenoise::input("find key: "),
     };
     if let Some(key) = arg {
         add_linenoise_history(&key);
-        if key.len() > 0 {
+        if !key.is_empty() {
             match db.data.get(&key) {
                 None => {
                     println!("there is no match for {:}", &key);
@@ -513,12 +513,12 @@ fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
 
 fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
     let arg = match rest_line {
-        x if x != "" => Some(x.to_string()),
+        x if !x.is_empty() => Some(x.to_string()),
         _ => linenoise::input("find key: "),
     };
     if let Some(key) = arg {
         add_linenoise_history(&key);
-        if key.len() > 0 {
+        if !key.is_empty() {
             for db_key in db.data.keys() {
                 if db_key.contains(&key) {
                     println!("{:}", db_key);
@@ -537,7 +537,7 @@ enum ListCmd {
 impl ListCmd {
     fn parse(args_line: &str) -> Option<Self> {
         let args = args_line.split_whitespace().collect::<Vec<_>>();
-        if args.len() == 0 {
+        if args.is_empty() {
             Some(ListCmd::AllKeys)
         } else if args.len() == 1 && args[0] == "recent" {
             Some(ListCmd::Recent(None))
@@ -562,10 +562,7 @@ fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
         Some(ListCmd::Recent(opt_count)) => {
             let mut entries = db.data.values().collect::<Vec<_>>();
             entries.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-            let count = match opt_count {
-                Some(c) => c,
-                None => 10,
-            };
+            let count = opt_count.unwrap_or(10);
             while entries.len() > count {
                 let remove_idx = entries.len() - 1;
                 entries.remove(remove_idx);
@@ -595,7 +592,7 @@ fn execute_cmd(db: &mut Db, cmd_line: &str) -> bool {
 
 fn parse_args() -> DbLocation {
     let args = std::env::args().skip(1).collect::<Vec<_>>();
-    if args.len() == 0 {
+    if args.is_empty() {
         DbLocation::DotLocal
     } else {
         let mut it = args.into_iter();
@@ -624,10 +621,8 @@ fn main() {
     linenoise::clear_screen();
     while let Some(cmd) = linenoise::input("> ") {
         add_linenoise_history(&cmd);
-        if cmd.len() > 0 {
-            if !execute_cmd(&mut db, &cmd) {
-                return;
-            }
+        if !cmd.is_empty() && !execute_cmd(&mut db, &cmd) {
+            return;
         }
     }
 }

@@ -25,8 +25,8 @@ impl Db {
     fn new(password: String, location: DbLocation) -> Db {
         Db {
             data: BTreeMap::new(),
-            password: password,
-            location: location,
+            password,
+            location,
         }
     }
 }
@@ -38,7 +38,7 @@ struct DbRecordDTO {
     value: BTreeMap<String, String>,
 }
 
-const DTO_TIME_FORMAT: &'static str = "%Y-%m-%dT%H:%M:%S";
+const DTO_TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 
 #[derive(Clone)]
 pub enum DbLocation {
@@ -61,7 +61,7 @@ fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
             path.push("share");
             path.push("cred-man");
         }
-        &DbLocation::SpecifiedDirectory(ref dir) => {
+        DbLocation::SpecifiedDirectory(dir) => {
             path = PathBuf::from(&dir);
         }
     }
@@ -71,7 +71,7 @@ fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
         PathKind::Temp => "keys.tmp.db".to_string(),
         PathKind::Backup => format!(
             "keys.backup.{}.db",
-            Local::now().format("%Y%m%d_%H%M%S").to_string()
+            Local::now().format("%Y%m%d_%H%M%S")
         ),
     });
     path
@@ -97,7 +97,7 @@ impl Db {
             Err(e) => Err(e),
             Ok(_) => {
                 let data = encrypted_file::parse_file(&path)?;
-                match encrypted_file::decrypt(&data, &password) {
+                match encrypted_file::decrypt(&data, password) {
                     None => Ok(DbLoadResult::WrongPassword),
                     Some(contents) => {
                         let dto: Vec<DbRecordDTO> = serde_json::from_str(&contents).unwrap();
