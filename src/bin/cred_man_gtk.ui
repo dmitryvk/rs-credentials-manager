@@ -135,14 +135,18 @@
           </packing>
         </child>
         <child>
-          <!-- n-columns=3 n-rows=3 -->
+          <!-- n-columns=2 n-rows=3 -->
           <object class="GtkGrid">
             <property name="visible">True</property>
             <property name="can-focus">False</property>
+            <property name="hexpand">True</property>
+            <property name="vexpand">True</property>
             <child>
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
+                <property name="halign">end</property>
+                <property name="valign">start</property>
                 <property name="label" translatable="yes">Key:</property>
               </object>
               <packing>
@@ -154,6 +158,8 @@
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
+                <property name="halign">end</property>
+                <property name="valign">start</property>
                 <property name="label" translatable="yes">Attribute:</property>
               </object>
               <packing>
@@ -165,6 +171,8 @@
               <object class="GtkLabel">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
+                <property name="halign">end</property>
+                <property name="valign">start</property>
                 <property name="label" translatable="yes">Value:</property>
               </object>
               <packing>
@@ -176,6 +184,8 @@
               <object class="GtkLabel" id="label_credinfo_key">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
+                <property name="halign">start</property>
+                <property name="valign">start</property>
                 <property name="label" translatable="yes">Key</property>
               </object>
               <packing>
@@ -187,6 +197,8 @@
               <object class="GtkLabel" id="label_credinfo_attr">
                 <property name="visible">True</property>
                 <property name="can-focus">False</property>
+                <property name="halign">start</property>
+                <property name="valign">start</property>
                 <property name="label" translatable="yes">Attribute</property>
               </object>
               <packing>
@@ -199,25 +211,20 @@
                 <property name="visible">True</property>
                 <property name="can-focus">True</property>
                 <property name="hexpand">True</property>
+                <property name="vexpand">True</property>
                 <property name="editable">False</property>
                 <property name="has-frame">False</property>
+                <property name="text" translatable="yes">1lIL</property>
                 <property name="primary-icon-stock">gtk-refresh</property>
                 <property name="secondary-icon-stock">gtk-copy</property>
-                <property name="input-purpose">password</property>
+                <style>
+                  <class name="monospace"/>
+                </style>
               </object>
               <packing>
                 <property name="left-attach">1</property>
                 <property name="top-attach">2</property>
               </packing>
-            </child>
-            <child>
-              <placeholder/>
-            </child>
-            <child>
-              <placeholder/>
-            </child>
-            <child>
-              <placeholder/>
             </child>
           </object>
           <packing>
