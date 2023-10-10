@@ -217,7 +217,7 @@ impl Ui {
         let label_credinfo_key;
 
         {
-            let mut ui = &mut *ui_ref.borrow_mut();
+            let ui = &mut *ui_ref.borrow_mut();
 
             dialog_credinfo = ui.dialog_credinfo.clone();
             label_credinfo_key = ui.label_credinfo_key.clone();
@@ -239,7 +239,7 @@ impl Ui {
         dialog_credinfo.hide();
 
         {
-            let mut ui = &mut *ui_ref.borrow_mut();
+            let ui = &mut *ui_ref.borrow_mut();
             ui.credinfo_value = None;
         }
     }
