@@ -7,6 +7,29 @@
 //!
 //! Data is stored in ~/.local/share/credentials-manager.
 //!
+#![warn(
+    clippy::cargo,
+    clippy::pedantic,
+    // Extra restrictions:
+    clippy::create_dir,
+    clippy::dbg_macro,
+    clippy::rest_pat_in_fully_bound_structs,
+    clippy::todo,
+    clippy::undocumented_unsafe_blocks,
+    clippy::unimplemented,
+    clippy::unwrap_used,
+)]
+#![allow(
+    clippy::cargo_common_metadata,
+    clippy::cast_precision_loss,
+    clippy::if_not_else,
+    clippy::multiple_crate_versions,
+    clippy::implicit_hasher,
+    clippy::new_without_default,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    clippy::unnecessary_wraps
+)]
 
 use chrono::naive::NaiveDateTime;
 use chrono::Local;
@@ -37,7 +60,9 @@ struct DbRecordDTO {
 
 const DTO_TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 
-fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
+type CommandHandler = fn(&mut Db, &str, &str) -> std::io::Result<bool>;
+
+fn get_command_handler(cmd: &str) -> Option<CommandHandler> {
     match cmd {
         "help" => Some(help_cmd),
         "quit" => Some(quit_cmd),
@@ -54,7 +79,7 @@ fn get_command_handler(cmd: &str) -> Option<fn(&mut Db, &str, &str) -> bool> {
     }
 }
 
-fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
+fn help_cmd(_: &mut Db, _: &str, _: &str) -> std::io::Result<bool> {
     println!("Commands:");
     println!(" help");
     println!(" quit");
@@ -67,11 +92,11 @@ fn help_cmd(_: &mut Db, _: &str, _: &str) -> bool {
     println!(" import");
     println!(" rename");
     println!(" edit");
-    true
+    Ok(true)
 }
 
-fn quit_cmd(_: &mut Db, _: &str, _: &str) -> bool {
-    false
+fn quit_cmd(_: &mut Db, _: &str, _: &str) -> std::io::Result<bool> {
+    Ok(false)
 }
 
 fn add_linenoise_history(line: &str) {
@@ -80,7 +105,7 @@ fn add_linenoise_history(line: &str) {
     }
 }
 
-fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> std::io::Result<bool> {
     let arg = match rest_line {
         x if !x.is_empty() => Some(x.to_string()),
         _ => linenoise::input("Key: "),
@@ -90,16 +115,16 @@ fn del_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         if !key.is_empty() {
             match db.data.remove(&key) {
                 Some(_) => {
-                    db.save().unwrap();
-                    println!("Removed '{:}'", key);
+                    db.save()?;
+                    println!("Removed '{key:}'");
                 }
                 None => {
-                    println!("There is no key '{:}'", key);
+                    println!("There is no key '{key:}'");
                 }
             }
         }
     }
-    true
+    Ok(true)
 }
 
 enum KvResult {
@@ -122,7 +147,7 @@ fn get_kv() -> KvResult {
                         val: parts[1].clone(),
                     }
                 } else {
-                    match linenoise::input(&format!("    value for {:}: ", key)) {
+                    match linenoise::input(&format!("    value for {key:}: ")) {
                         Some(ref x) if x.is_empty() => KvResult::None,
                         Some(x) => KvResult::Some { key, val: x },
                         None => KvResult::None,
@@ -133,7 +158,7 @@ fn get_kv() -> KvResult {
     }
 }
 
-fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> std::io::Result<bool> {
     let arg = match rest_line {
         x if !x.is_empty() => Some(x.to_string()),
         _ => linenoise::input("new key: "),
@@ -157,11 +182,14 @@ fn add_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
                 }
             }
             db.data.insert(key.clone(), rec);
-            println!("inserted '{}', now storing {} keys", key, db.data.len());
-            db.save().unwrap();
+            println!(
+                "inserted '{key}', now storing {len} keys",
+                len = db.data.len()
+            );
+            db.save()?;
         }
     }
-    true
+    Ok(true)
 }
 
 struct RenameCmdArgs {
@@ -173,7 +201,7 @@ impl RenameCmdArgs {
     fn parse(args_line: &str) -> Option<RenameCmdArgs> {
         let mut args = args_line
             .split_whitespace()
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>();
         if args.len() > 2 {
             return None;
@@ -206,39 +234,39 @@ impl RenameCmdArgs {
         let to;
         {
             let mut it = args.into_iter();
-            from = it.next().unwrap();
-            to = it.next().unwrap();
+            from = it.next().expect("args.len == 2");
+            to = it.next().expect("args.len == 2");
         }
         Some(RenameCmdArgs { from, to })
     }
 }
 
-fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> std::io::Result<bool> {
     match RenameCmdArgs::parse(args_line) {
         None => {
             println!("Unexpected input; expected: rename [oldname [newname]]");
         }
         Some(RenameCmdArgs { from, to }) => {
             if db.data.get(&to).is_some() {
-                println!("Key {} already exists, not renaming", to);
+                println!("Key {to} already exists, not renaming");
             } else {
                 let cur = db.data.remove(&from);
                 match cur {
                     None => {
-                        println!("Key {} does not exist", from);
+                        println!("Key {from} does not exist");
                     }
                     Some(mut v) => {
                         v.key = to.clone();
                         v.timestamp = Local::now().naive_local();
                         db.data.insert(to.clone(), v);
-                        db.save().unwrap();
-                        println!("Renamed {} to {}", from, to);
+                        db.save()?;
+                        println!("Renamed {from} to {to}");
                     }
                 }
             }
         }
     }
-    true
+    Ok(true)
 }
 
 #[derive(Debug)]
@@ -256,7 +284,7 @@ enum EditCmdOperation {
 }
 
 fn ask_user(prompt: &str, history: bool) -> String {
-    let response = linenoise::input(prompt).unwrap();
+    let response = linenoise::input(prompt).expect("stdio operations should be successful");
     if history {
         add_linenoise_history(&response);
     }
@@ -267,7 +295,7 @@ impl EditCmd {
     fn parse(args_line: &str) -> Option<Self> {
         let args = args_line
             .split_whitespace()
-            .map(|s| s.to_string())
+            .map(ToString::to_string)
             .collect::<Vec<_>>();
         let mut it = args.into_iter();
         let key = it
@@ -351,9 +379,9 @@ impl EditCmd {
     }
 }
 
-fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> std::io::Result<bool> {
     let cmd = EditCmd::parse(args_line);
-    println!("edit cmd: {:?}", cmd);
+    println!("edit cmd: {cmd:?}");
     match cmd {
         None => {
             println!("Unexepected input. Expected: edit [key [op_type [subkey [arg]]]]");
@@ -367,16 +395,15 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                     msg = format!("Entry {} not found", cmd.key);
                 }
                 Some(entry) => match cmd.op {
-                    EditCmdOperation::Del(subkey) => match entry.value.remove(&subkey) {
-                        Some(_) => {
+                    EditCmdOperation::Del(subkey) => {
+                        if entry.value.remove(&subkey).is_some() {
                             should_save = true;
-                            msg = format!("Subkey {} removed", subkey);
-                        }
-                        None => {
+                            msg = format!("Subkey {subkey} removed");
+                        } else {
                             should_save = false;
                             msg = format!("Entry {} does not contain subkey {}", cmd.key, subkey);
                         }
-                    },
+                    }
                     EditCmdOperation::Add(subkey, value) => {
                         if entry.value.get(&subkey).is_none() {
                             entry.value.insert(subkey.clone(), value);
@@ -384,13 +411,13 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                             msg = format!("Added subkey {} for {}", subkey, cmd.key);
                         } else {
                             should_save = false;
-                            msg = format!("Subkey {} already exists", subkey);
+                            msg = format!("Subkey {subkey} already exists");
                         }
                     }
                     EditCmdOperation::Update(subkey, value) => match entry.value.get_mut(&subkey) {
                         None => {
                             should_save = false;
-                            msg = format!("Subkey {} does not exist", subkey);
+                            msg = format!("Subkey {subkey} does not exist");
                         }
                         Some(subvalue) => {
                             *subvalue = value;
@@ -403,29 +430,29 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                         match cur {
                             None => {
                                 should_save = false;
-                                msg = format!("Subkey {} does not exist", subkey);
+                                msg = format!("Subkey {subkey} does not exist");
                             }
                             Some(cur) => {
                                 entry.value.insert(newsubkey.clone(), cur);
                                 should_save = true;
-                                msg = format!("Renamed subkey {} to {}", subkey, newsubkey);
+                                msg = format!("Renamed subkey {subkey} to {newsubkey}");
                             }
                         }
                     }
                 },
             }
             if should_save {
-                db.save().unwrap();
+                db.save()?;
             }
-            println!("{}", msg);
+            println!("{msg}");
         }
     }
-    true
+    Ok(true)
 }
 
-fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> std::io::Result<bool> {
     let mut out: Box<dyn Write> = match rest_line {
-        x if !x.is_empty() => Box::new(std::fs::File::create(x).unwrap()),
+        x if !x.is_empty() => Box::new(std::fs::File::create(x)?),
         _ => Box::new(std::io::stdout()),
     };
     let mut dto = Vec::new();
@@ -437,54 +464,61 @@ fn dump_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         });
     }
     let contents = serde_json::to_string_pretty(&dto).expect("DbRecordDTO is json-serializable");
-    out.write_all(contents.as_bytes()).unwrap();
-    out.write_all(b"\n").unwrap();
-    out.flush().unwrap();
+    out.write_all(contents.as_bytes())?;
+    out.write_all(b"\n")?;
+    out.flush()?;
 
-    true
+    Ok(true)
 }
 
 fn import_from(db: &mut Db, file_name: &str) -> io::Result<()> {
     let mut contents = String::new();
     let mut f = std::fs::File::open(file_name)?;
     f.read_to_string(&mut contents)?;
-    let dto: Vec<DbRecordDTO> = serde_json::from_str(&contents).unwrap();
+    let dto: Vec<DbRecordDTO> = serde_json::from_str(&contents).map_err(|e| {
+        std::io::Error::new(std::io::ErrorKind::Other, format!("Json parse error: {e}"))
+    })?;
     for r in dto {
         let v = DbRecord {
             key: r.key,
-            timestamp: NaiveDateTime::parse_from_str(&r.timestamp, DTO_TIME_FORMAT).unwrap(),
+            timestamp: NaiveDateTime::parse_from_str(&r.timestamp, DTO_TIME_FORMAT).map_err(
+                |e| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::Other,
+                        format!(
+                            "Json parse error: invalid timestamp \"{}\": {e}",
+                            r.timestamp
+                        ),
+                    )
+                },
+            )?,
             value: r.value,
         };
         let k = v.key.clone();
         db.data.insert(k, v);
     }
 
-    db.save().unwrap();
+    db.save()?;
 
     Ok(())
 }
 
-fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn import_cmd(db: &mut Db, _: &str, rest_line: &str) -> std::io::Result<bool> {
     let filename = match rest_line {
         x if !x.is_empty() => x.trim().to_string(),
         _ => {
-            let tmp = linenoise::input("Enter filename: ").unwrap();
+            let tmp = linenoise::input("Enter filename: ").expect("stdio should not fail");
             add_linenoise_history(&tmp);
             tmp
         }
     };
 
-    match import_from(db, &filename) {
-        Ok(()) => {}
-        Err(e) => {
-            println!("Error: {:?}", e);
-        }
-    }
+    import_from(db, &filename)?;
 
-    true
+    Ok(true)
 }
 
-fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> std::io::Result<bool> {
     let arg = match rest_line {
         x if !x.is_empty() => Some(x.to_string()),
         _ => linenoise::input("find key: "),
@@ -506,10 +540,10 @@ fn get_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
             }
         }
     }
-    true
+    Ok(true)
 }
 
-fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
+fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> std::io::Result<bool> {
     let arg = match rest_line {
         x if !x.is_empty() => Some(x.to_string()),
         _ => linenoise::input("find key: "),
@@ -519,12 +553,12 @@ fn find_cmd(db: &mut Db, _: &str, rest_line: &str) -> bool {
         if !key.is_empty() {
             for db_key in db.data.keys() {
                 if db_key.contains(&key) {
-                    println!("{:}", db_key);
+                    println!("{db_key:}");
                 }
             }
         }
     }
-    true
+    Ok(true)
 }
 
 enum ListCmd {
@@ -549,7 +583,7 @@ impl ListCmd {
     }
 }
 
-fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
+fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> std::io::Result<bool> {
     let cmd = ListCmd::parse(args_line);
     match cmd {
         Some(ListCmd::AllKeys) => {
@@ -565,8 +599,8 @@ fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
                 let remove_idx = entries.len() - 1;
                 entries.remove(remove_idx);
             }
-            println!("{} recent keys:", count);
-            for v in entries.iter() {
+            println!("{count} recent keys:");
+            for v in entries {
                 println!("{} ({})", v.key, v.timestamp.format("%Y-%m-%d %H:%M:%S"));
             }
         }
@@ -574,17 +608,16 @@ fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> bool {
             println!("Unrecognized arguments for list; expected: list [recent [count]]");
         }
     };
-    true
+    Ok(true)
 }
 
-fn execute_cmd(db: &mut Db, cmd_line: &str) -> bool {
+fn execute_cmd(db: &mut Db, cmd_line: &str) -> std::io::Result<bool> {
     let (cmd, args) = parse_cmd_line(cmd_line);
-    match get_command_handler(cmd) {
-        Some(handler) => handler(db, cmd, args),
-        None => {
-            println!("Unknown command {:}; try `help'", cmd);
-            true
-        }
+    if let Some(handler) = get_command_handler(cmd) {
+        handler(db, cmd, args)
+    } else {
+        println!("Unknown command {cmd:}; try `help'");
+        Ok(true)
     }
 }
 
@@ -594,7 +627,7 @@ fn parse_args() -> DbLocation {
         DbLocation::DotLocal
     } else {
         let mut it = args.into_iter();
-        let s = it.next().unwrap();
+        let s = it.next().expect("args is not empty");
         DbLocation::SpecifiedDirectory(s)
     }
 }
@@ -602,25 +635,32 @@ fn parse_args() -> DbLocation {
 fn main() {
     let db_location = parse_args();
     let mut db;
-    let password = linenoise::input("Enter password: ").unwrap();
+    let password = linenoise::input("Enter password: ").expect("stdio should be successful");
     match Db::load(&db_location, &password) {
         Ok(DbLoadResult::Loaded(loaded_db)) => {
             db = loaded_db;
         }
         Ok(DbLoadResult::WrongPassword) => {
             println!("Wrong password");
-            return;
+            std::process::exit(1);
         }
         Err(e) => {
-            println!("error: {:}", e);
-            return;
+            println!("error: {e:}");
+            std::process::exit(1);
         }
     }
     linenoise::clear_screen();
     while let Some(cmd) = linenoise::input("> ") {
         add_linenoise_history(&cmd);
-        if !cmd.is_empty() && !execute_cmd(&mut db, &cmd) {
-            return;
+        if !cmd.is_empty() {
+            match execute_cmd(&mut db, &cmd) {
+                Ok(true) => {}
+                Ok(false) => return,
+                Err(e) => {
+                    println!("error: {e:}");
+                    std::process::exit(1);
+                }
+            }
         }
     }
 }
