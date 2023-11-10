@@ -117,7 +117,7 @@ impl Ui {
         let result2 = result.clone();
         dlg_password.connect_delete_event(move |_, _| {
             result2.borrow().dlg_password.hide();
-            Inhibit(true)
+            glib::Propagation::Stop
         });
 
         let result2 = result.clone();
@@ -199,7 +199,7 @@ impl Ui {
 
         w.connect_delete_event(|_, _| {
             gtk::main_quit();
-            Inhibit(false)
+            glib::Propagation::Proceed
         });
 
         entry_search_credentials.set_sensitive(false);
