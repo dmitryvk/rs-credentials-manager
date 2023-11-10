@@ -5,19 +5,28 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::str;
 
+#[must_use]
 pub fn generate_salt(n: usize) -> Vec<u8> {
     let mut data: Vec<u8> = vec![0; n];
     getrandom(&mut data).expect("getrandom() failed");
     data
 }
 
+#[must_use]
 pub fn derive_key(salt: &[u8], password: &str) -> Vec<u8> {
     use scrypt::Params;
     let mut result = vec![0u8; 32];
-    scrypt::scrypt(password.as_bytes(), salt, &Params::new(14, 8, 1, 32).unwrap(), &mut result).unwrap();
+    scrypt::scrypt(
+        password.as_bytes(),
+        salt,
+        &Params::new(14, 8, 1, 32).unwrap(),
+        &mut result,
+    )
+    .unwrap();
     result
 }
 
+#[allow(clippy::module_name_repetitions)]
 pub struct EncryptedFileContent {
     salt: Vec<u8>,
     nonce: Vec<u8>,
@@ -26,20 +35,28 @@ pub struct EncryptedFileContent {
 }
 
 pub fn encrypt(plaintext: &str, password: &str) -> EncryptedFileContent {
-    use aes_gcm::{ Key, aead::{Aead, OsRng, Payload}, Aes256Gcm, KeyInit, AeadCore};
+    use aes_gcm::{
+        aead::{Aead, OsRng, Payload},
+        AeadCore, Aes256Gcm, Key, KeyInit,
+    };
     let salt = generate_salt(16);
     let key = derive_key(&salt, password);
     let key = Key::<Aes256Gcm>::from_slice(&key);
-    let cipher = Aes256Gcm::new(&key);
+    let cipher = Aes256Gcm::new(key);
     let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
     // let mut tag = vec![0u8; 16];
     let aad = b"cred-man";
-    let result = cipher.encrypt(&nonce, Payload  {
-        msg: plaintext.as_bytes(),
-        aad,
-    }).expect("should not be fallible");
-    let tag = result[(result.len()-16)..].to_vec();
-    let ciphertext = result[..(result.len()-16)].to_vec();
+    let result = cipher
+        .encrypt(
+            &nonce,
+            Payload {
+                msg: plaintext.as_bytes(),
+                aad,
+            },
+        )
+        .expect("should not be fallible");
+    let tag = result[(result.len() - 16)..].to_vec();
+    let ciphertext = result[..(result.len() - 16)].to_vec();
 
     EncryptedFileContent {
         salt,
@@ -61,6 +78,8 @@ const CRED_MAN_MAGIC: &[u8] = b"CREDMAN";
 
 const CRED_MAN_VERSION: i32 = 1;
 
+#[must_use]
+#[allow(clippy::cast_sign_loss)]
 pub fn i32_to_bytes(x: i32) -> [u8; 4] {
     let v: [u8; 4] = [
         ((x >> 24) & 0xFF) as u8,
@@ -86,6 +105,7 @@ pub fn write_to_file<P: AsRef<Path>>(file_name: P, data: &EncryptedFileContent) 
 
 pub fn parse_file<P: AsRef<Path>>(file_name: P) -> io::Result<EncryptedFileContent> {
     let mut file = File::open(file_name)?;
+    #[allow(clippy::cast_possible_truncation)]
     let size = file.metadata()?.len() as usize;
 
     let mut magic = vec![0u8; CRED_MAN_MAGIC.len()];
@@ -103,15 +123,19 @@ pub fn parse_file<P: AsRef<Path>>(file_name: P) -> io::Result<EncryptedFileConte
     read_bytes(&mut file, &mut ciphertext)?;
 
     if magic != CRED_MAN_MAGIC {
-        panic!("MAGIC mismatch");
+        return Err(io::Error::new(io::ErrorKind::Other, "MAGIC mismatch"));
     }
+    #[allow(clippy::cast_lossless)]
     let ver: i32 = ((ver_bytes[0] as i32) << 24)
         | ((ver_bytes[1] as i32) << 16)
         | ((ver_bytes[2] as i32) << 8)
         | (ver_bytes[3] as i32);
 
     if ver > 1 {
-        panic!("Unsupported credentials database version: {}", ver);
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            format!("Unsupported credentials database version: {ver}"),
+        ));
     }
 
     Ok(EncryptedFileContent {
@@ -122,8 +146,12 @@ pub fn parse_file<P: AsRef<Path>>(file_name: P) -> io::Result<EncryptedFileConte
     })
 }
 
+#[must_use]
 pub fn decrypt(data: &EncryptedFileContent, password: &str) -> Option<String> {
-    use aes_gcm::{ Key, aead::{Nonce, Aead, Payload}, Aes256Gcm, KeyInit};
+    use aes_gcm::{
+        aead::{Aead, Nonce, Payload},
+        Aes256Gcm, Key, KeyInit,
+    };
     let key = derive_key(&data.salt, password);
     let aad = b"cred-man";
     let mut ciphertext = Vec::with_capacity(data.tag.len() + data.ciphertext.len());
@@ -131,12 +159,17 @@ pub fn decrypt(data: &EncryptedFileContent, password: &str) -> Option<String> {
     ciphertext.extend_from_slice(&data.tag);
 
     let key = Key::<Aes256Gcm>::from_slice(&key);
-    let cipher = Aes256Gcm::new(&key);
+    let cipher = Aes256Gcm::new(key);
     let nonce = Nonce::<Aes256Gcm>::from_slice(&data.nonce);
-    let plaintext = cipher.decrypt(&nonce, Payload {
-        msg: &ciphertext,
-        aad
-    }).ok()?;
+    let plaintext = cipher
+        .decrypt(
+            nonce,
+            Payload {
+                msg: &ciphertext,
+                aad,
+            },
+        )
+        .ok()?;
 
     let plaintext = String::from_utf8(plaintext).ok()?;
 

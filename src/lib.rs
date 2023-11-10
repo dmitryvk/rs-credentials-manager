@@ -1,3 +1,26 @@
+#![warn(
+    clippy::cargo,
+    clippy::pedantic,
+    // Extra restrictions:
+    clippy::create_dir,
+    clippy::dbg_macro,
+    clippy::rest_pat_in_fully_bound_structs,
+    clippy::todo,
+    clippy::undocumented_unsafe_blocks,
+    clippy::unimplemented,
+    // clippy::unwrap_used,
+)]
+#![allow(
+    clippy::cargo_common_metadata,
+    clippy::cast_precision_loss,
+    clippy::if_not_else,
+    clippy::multiple_crate_versions,
+    clippy::implicit_hasher,
+    clippy::new_without_default,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+)]
+
 use chrono::naive::NaiveDateTime;
 use chrono::Local;
 use serde::Deserialize;
@@ -46,6 +69,7 @@ pub enum DbLocation {
     SpecifiedDirectory(String),
 }
 
+#[derive(Clone, Copy)]
 pub enum PathKind {
     Main,
     Temp,
@@ -69,10 +93,7 @@ fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
     path.push(match kind {
         PathKind::Main => "keys.db".to_string(),
         PathKind::Temp => "keys.tmp.db".to_string(),
-        PathKind::Backup => format!(
-            "keys.backup.{}.db",
-            Local::now().format("%Y%m%d_%H%M%S")
-        ),
+        PathKind::Backup => format!("keys.backup.{}.db", Local::now().format("%Y%m%d_%H%M%S")),
     });
     path
 }
@@ -103,7 +124,7 @@ impl Db {
                         let dto: Vec<DbRecordDTO> = serde_json::from_str(&contents).unwrap();
                         let mut db = Db::new(password.to_owned(), location.clone());
                         //println!("db = {:#?}", dto);
-                        for r in dto.into_iter() {
+                        for r in dto {
                             let k = r.key.clone();
                             db.data.insert(
                                 k,

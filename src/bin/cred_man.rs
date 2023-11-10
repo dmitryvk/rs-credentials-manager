@@ -346,9 +346,7 @@ impl EditCmd {
                     op: EditCmdOperation::Rename(subkey, new_subkey),
                 })
             }
-            _ => {
-                None
-            }
+            _ => None,
         }
     }
 }
