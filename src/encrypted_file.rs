@@ -1,7 +1,3 @@
-use crypto::aead::{AeadDecryptor, AeadEncryptor};
-use crypto::aes::KeySize;
-use crypto::aes_gcm::AesGcm;
-use crypto::scrypt::{scrypt, ScryptParams};
 use getrandom::getrandom;
 use std::fs::File;
 use std::io;
@@ -16,13 +12,9 @@ pub fn generate_salt(n: usize) -> Vec<u8> {
 }
 
 pub fn derive_key(salt: &[u8], password: &str) -> Vec<u8> {
+    use scrypt::Params;
     let mut result = vec![0u8; 32];
-    scrypt(
-        password.as_bytes(),
-        salt,
-        &ScryptParams::new(14, 8, 1),
-        &mut result,
-    );
+    scrypt::scrypt(password.as_bytes(), salt, &Params::new(14, 8, 1, 32).unwrap(), &mut result).unwrap();
     result
 }
 
@@ -34,22 +26,24 @@ pub struct EncryptedFileContent {
 }
 
 pub fn encrypt(plaintext: &str, password: &str) -> EncryptedFileContent {
+    use aes_gcm::{ Key, aead::{Aead, OsRng, Payload}, Aes256Gcm, KeyInit, AeadCore};
     let salt = generate_salt(16);
     let key = derive_key(&salt, password);
-    let nonce = generate_salt(12);
-    let mut tag = vec![0u8; 16];
+    let key = Key::<Aes256Gcm>::from_slice(&key);
+    let cipher = Aes256Gcm::new(&key);
+    let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
+    // let mut tag = vec![0u8; 16];
     let aad = b"cred-man";
-
-    let mut ciphertext = vec![0u8; plaintext.len()];
-    AesGcm::new(KeySize::KeySize256, &key, &nonce, aad).encrypt(
-        plaintext.as_bytes(),
-        &mut ciphertext,
-        &mut tag,
-    );
+    let result = cipher.encrypt(&nonce, Payload  {
+        msg: plaintext.as_bytes(),
+        aad,
+    }).expect("should not be fallible");
+    let tag = result[(result.len()-16)..].to_vec();
+    let ciphertext = result[..(result.len()-16)].to_vec();
 
     EncryptedFileContent {
         salt,
-        nonce,
+        nonce: nonce.to_vec(),
         tag,
         ciphertext,
     }
@@ -129,20 +123,22 @@ pub fn parse_file<P: AsRef<Path>>(file_name: P) -> io::Result<EncryptedFileConte
 }
 
 pub fn decrypt(data: &EncryptedFileContent, password: &str) -> Option<String> {
+    use aes_gcm::{ Key, aead::{Nonce, Aead, Payload}, Aes256Gcm, KeyInit};
     let key = derive_key(&data.salt, password);
     let aad = b"cred-man";
+    let mut ciphertext = Vec::with_capacity(data.tag.len() + data.ciphertext.len());
+    ciphertext.extend_from_slice(&data.ciphertext);
+    ciphertext.extend_from_slice(&data.tag);
 
-    let mut deciphered = vec![0u8; data.ciphertext.len()];
+    let key = Key::<Aes256Gcm>::from_slice(&key);
+    let cipher = Aes256Gcm::new(&key);
+    let nonce = Nonce::<Aes256Gcm>::from_slice(&data.nonce);
+    let plaintext = cipher.decrypt(&nonce, Payload {
+        msg: &ciphertext,
+        aad
+    }).ok()?;
 
-    let success = AesGcm::new(KeySize::KeySize256, &key, &data.nonce, aad).decrypt(
-        &data.ciphertext,
-        &mut deciphered,
-        &data.tag,
-    );
+    let plaintext = String::from_utf8(plaintext).ok()?;
 
-    if success {
-        Some(str::from_utf8(&deciphered).unwrap().to_string())
-    } else {
-        None
-    }
+    Some(plaintext)
 }
