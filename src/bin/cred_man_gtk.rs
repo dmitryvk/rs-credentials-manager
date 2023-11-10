@@ -1,3 +1,27 @@
+#![warn(
+    clippy::cargo,
+    clippy::pedantic,
+    // Extra restrictions:
+    clippy::create_dir,
+    clippy::dbg_macro,
+    clippy::rest_pat_in_fully_bound_structs,
+    clippy::todo,
+    clippy::undocumented_unsafe_blocks,
+    clippy::unimplemented,
+    clippy::unwrap_used,
+)]
+#![allow(
+    clippy::cargo_common_metadata,
+    clippy::cast_precision_loss,
+    clippy::if_not_else,
+    clippy::multiple_crate_versions,
+    clippy::implicit_hasher,
+    clippy::new_without_default,
+    clippy::missing_panics_doc,
+    clippy::missing_errors_doc,
+    clippy::unnecessary_wraps
+)]
+
 use cred_man_lib::{Db, DbLoadResult, DbLocation};
 use gtk::prelude::*;
 use std::cell::RefCell;
@@ -24,6 +48,7 @@ struct Ui {
 }
 
 impl Ui {
+    #[allow(clippy::too_many_lines)]
     pub fn new(db_location: DbLocation) -> Rc<RefCell<Self>> {
         let b = gtk::Builder::new();
 
@@ -131,7 +156,7 @@ impl Ui {
                             gtk::DialogFlags::MODAL,
                             gtk::MessageType::Error,
                             gtk::ButtonsType::Close,
-                            &format!("error: {:}", e),
+                            &format!("error: {e:}"),
                         );
                         dlg.run();
                         dlg.close();
@@ -143,14 +168,20 @@ impl Ui {
         let result2 = result.clone();
         tree_credentials.connect_row_activated(move |_, path, _| {
             let store = result2.borrow().store_credentials.clone();
-            let iter = store.iter(path).unwrap();
+            let iter = store.iter(path).expect("path was activated");
             let parent_iter = match store.iter_parent(&iter) {
                 None => return,
                 Some(it) => it,
             };
 
-            let key = store.value(&parent_iter, 0).get::<String>().unwrap();
-            let attr_name = store.value(&iter, 0).get::<String>().unwrap();
+            let key = store
+                .value(&parent_iter, 0)
+                .get::<String>()
+                .expect("type is a string");
+            let attr_name = store
+                .value(&iter, 0)
+                .get::<String>()
+                .expect("type is a string");
             Ui::show_attr(&result2, &key, &attr_name);
         });
 
@@ -196,7 +227,13 @@ impl Ui {
 
         store_credentials.clear();
 
-        for (name, record) in ui.borrow().db.as_ref().unwrap().data.iter() {
+        for (name, record) in &ui
+            .borrow()
+            .db
+            .as_ref()
+            .expect("db is open at this moment")
+            .data
+        {
             let is_match = match filter_key {
                 None => true,
                 Some(key) => name.contains(key),
@@ -224,9 +261,15 @@ impl Ui {
             let label_credinfo_attr = ui.label_credinfo_attr.clone();
             let entry_credinfo_value = ui.entry_credinfo_value.clone();
 
-            let db = ui.db.as_ref().unwrap();
+            let db = ui.db.as_ref().expect("db is open at this moment");
 
-            let value = db.data.get(key).unwrap().value.get(attr).unwrap();
+            let value = db
+                .data
+                .get(key)
+                .expect("key from tree is in db")
+                .value
+                .get(attr)
+                .expect("key and attr from tree is in db");
 
             ui.credinfo_value = Some((key.to_owned(), attr.to_owned(), value.clone()));
 
@@ -246,15 +289,25 @@ impl Ui {
 
     fn credinfo_reveal(ui_ref: &Rc<RefCell<Self>>) {
         let ui = &*ui_ref.borrow_mut();
-        let value = ui.credinfo_value.as_ref().unwrap().2.clone();
+        let value = ui
+            .credinfo_value
+            .as_ref()
+            .expect("value should be available at this moment")
+            .2
+            .clone();
         ui.entry_credinfo_value.set_text(&value);
     }
 
     fn credinfo_copy(ui_ref: &Rc<RefCell<Self>>) {
         let ui = &*ui_ref.borrow();
-        let value = ui.credinfo_value.as_ref().unwrap().2.clone();
+        let value = ui
+            .credinfo_value
+            .as_ref()
+            .expect("value should be available at this moment")
+            .2
+            .clone();
         let display = ui.window.display();
-        let clipboard = gtk::Clipboard::default(&display).unwrap();
+        let clipboard = gtk::Clipboard::default(&display).expect("clipboard should be available");
         clipboard.set_text(&value);
 
         let dlg = gtk::MessageDialog::new(
@@ -275,7 +328,7 @@ fn parse_args() -> DbLocation {
         DbLocation::DotLocal
     } else {
         let mut it = args.into_iter();
-        let s = it.next().unwrap();
+        let s = it.next().expect("args is not empty");
         DbLocation::SpecifiedDirectory(s)
     }
 }
