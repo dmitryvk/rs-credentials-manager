@@ -8,7 +8,7 @@
     clippy::todo,
     clippy::undocumented_unsafe_blocks,
     clippy::unimplemented,
-    // clippy::unwrap_used,
+    clippy::unwrap_used,
 )]
 #![allow(
     clippy::cargo_common_metadata,
@@ -18,7 +18,7 @@
     clippy::implicit_hasher,
     clippy::new_without_default,
     clippy::missing_panics_doc,
-    clippy::missing_errors_doc,
+    clippy::missing_errors_doc
 )]
 
 use chrono::naive::NaiveDateTime;
@@ -89,7 +89,6 @@ fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
             path = PathBuf::from(&dir);
         }
     }
-    std::fs::create_dir_all(&path).unwrap();
     path.push(match kind {
         PathKind::Main => "keys.db".to_string(),
         PathKind::Temp => "keys.tmp.db".to_string(),
@@ -112,6 +111,8 @@ impl Db {
                     "Path {} not found, will create new database",
                     path.to_string_lossy()
                 );
+                let dir = path.parent().expect("get_db_path returns path with dir");
+                std::fs::create_dir_all(dir)?;
                 let db = Db::new(password.to_owned(), location.clone());
                 Ok(DbLoadResult::Loaded(db))
             }
@@ -121,9 +122,14 @@ impl Db {
                 match encrypted_file::decrypt(&data, password) {
                     None => Ok(DbLoadResult::WrongPassword),
                     Some(contents) => {
-                        let dto: Vec<DbRecordDTO> = serde_json::from_str(&contents).unwrap();
+                        let dto: Vec<DbRecordDTO> =
+                            serde_json::from_str(&contents).map_err(|e| {
+                                io::Error::new(
+                                    io::ErrorKind::Other,
+                                    format!("Db contains invalid json: {e}"),
+                                )
+                            })?;
                         let mut db = Db::new(password.to_owned(), location.clone());
-                        //println!("db = {:#?}", dto);
                         for r in dto {
                             let k = r.key.clone();
                             db.data.insert(
@@ -133,8 +139,12 @@ impl Db {
                                     timestamp: NaiveDateTime::parse_from_str(
                                         &r.timestamp,
                                         DTO_TIME_FORMAT,
-                                    )
-                                    .unwrap(),
+                                    ).map_err(|e| {
+                                        io::Error::new(
+                                            io::ErrorKind::Other,
+                                            format!("Db contains invalid json: invalid timestamp \"{}\": {e}", r.timestamp),
+                                        )
+                                    })?,
                                     value: r.value,
                                 },
                             );
@@ -150,10 +160,8 @@ impl Db {
         let main_path = get_db_path(PathKind::Main, &self.location);
         let backup_path = get_db_path(PathKind::Backup, &self.location);
         let temp_path = get_db_path(PathKind::Temp, &self.location);
-        //println!("main_path: {:?}", main_path);
         match fs::metadata(&main_path) {
             Ok(_) => {
-                //println!("copy main to backup");
                 fs::copy(&main_path, &backup_path)?;
             }
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => (),
@@ -169,13 +177,25 @@ impl Db {
                 value: r.value.clone(),
             });
         }
-        let contents = serde_json::to_string(&dto).unwrap();
-        //println!("contents: {}", contents);
+        let contents = serde_json::to_string(&dto).expect("DbRecordDTO is json-serializable");
         let data = encrypted_file::encrypt(&contents, &self.password);
-        //println!("encrypted");
         encrypted_file::write_to_file(&temp_path, &data)?;
-        //println!("wrote to {:?}", temp_path);
         fs::rename(&temp_path, &main_path)?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn db_recorddto_is_serializable() {
+        serde_json::to_string(&DbRecordDTO {
+            key: String::new(),
+            timestamp: String::new(),
+            value: BTreeMap::new(),
+        })
+        .expect("DbRecordDTO should be serializable");
     }
 }

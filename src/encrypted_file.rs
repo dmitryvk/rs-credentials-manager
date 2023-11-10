@@ -19,10 +19,10 @@ pub fn derive_key(salt: &[u8], password: &str) -> Vec<u8> {
     scrypt::scrypt(
         password.as_bytes(),
         salt,
-        &Params::new(14, 8, 1, 32).unwrap(),
+        &Params::new(14, 8, 1, 32).expect("parameters are hardcoded and valid"),
         &mut result,
     )
-    .unwrap();
+    .expect("result.len == 32");
     result
 }
 
