@@ -162,7 +162,7 @@ impl Db {
         let temp_path = get_db_path(PathKind::Temp, &self.location);
         match fs::metadata(&main_path) {
             Ok(_) => {
-                fs::copy(&main_path, &backup_path)?;
+                fs::copy(&main_path, backup_path)?;
             }
             Err(ref e) if e.kind() == io::ErrorKind::NotFound => (),
             Err(e) => {

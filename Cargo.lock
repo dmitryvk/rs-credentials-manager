@@ -189,6 +189,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "cli"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "cred-man",
+ "linenoise-rust",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "core-foundation-sys"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -211,9 +222,6 @@ dependencies = [
  "chrono",
  "dirs",
  "getrandom",
- "glib",
- "gtk",
- "linenoise-rust",
  "scrypt",
  "serde",
  "serde_json",
@@ -585,6 +593,15 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.39",
+]
+
+[[package]]
+name = "gui"
+version = "0.1.0"
+dependencies = [
+ "cred-man",
+ "glib",
+ "gtk",
 ]
 
 [[package]]
