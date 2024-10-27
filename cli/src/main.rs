@@ -39,6 +39,7 @@ use std::cmp;
 use std::collections::BTreeMap;
 use std::io;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 use std::str::FromStr;
 
 fn parse_cmd_line(cmd_line: &str) -> (&str, &str) {
@@ -628,7 +629,7 @@ fn parse_args() -> DbLocation {
     } else {
         let mut it = args.into_iter();
         let s = it.next().expect("args is not empty");
-        DbLocation::SpecifiedDirectory(s)
+        DbLocation::SpecifiedDirectory(PathBuf::from(s))
     }
 }
 

@@ -25,6 +25,7 @@
 use cred_man_lib::{Db, DbLoadResult, DbLocation};
 use gtk::prelude::*;
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::rc::Rc;
 
 const BUILDER_UI: &str = include_str!("cred_man_gtk.ui");
@@ -329,7 +330,7 @@ fn parse_args() -> DbLocation {
     } else {
         let mut it = args.into_iter();
         let s = it.next().expect("args is not empty");
-        DbLocation::SpecifiedDirectory(s)
+        DbLocation::SpecifiedDirectory(PathBuf::from(s))
     }
 }
 

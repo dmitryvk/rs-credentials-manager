@@ -66,7 +66,7 @@ const DTO_TIME_FORMAT: &str = "%Y-%m-%dT%H:%M:%S";
 #[derive(Clone)]
 pub enum DbLocation {
     DotLocal,
-    SpecifiedDirectory(String),
+    SpecifiedDirectory(PathBuf),
 }
 
 #[derive(Clone, Copy)]
@@ -86,7 +86,7 @@ fn get_db_path(kind: PathKind, location: &DbLocation) -> PathBuf {
             path.push("cred-man");
         }
         DbLocation::SpecifiedDirectory(dir) => {
-            path = PathBuf::from(&dir);
+            path = dir.clone();
         }
     }
     path.push(match kind {
