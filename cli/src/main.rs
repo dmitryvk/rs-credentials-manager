@@ -248,7 +248,7 @@ fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> std::io::Result<bool> {
             println!("Unexpected input; expected: rename [oldname [newname]]");
         }
         Some(RenameCmdArgs { from, to }) => {
-            if db.data.get(&to).is_some() {
+            if db.data.contains_key(&to) {
                 println!("Key {to} already exists, not renaming");
             } else {
                 let cur = db.data.remove(&from);
@@ -257,7 +257,7 @@ fn rename_cmd(db: &mut Db, _: &str, args_line: &str) -> std::io::Result<bool> {
                         println!("Key {from} does not exist");
                     }
                     Some(mut v) => {
-                        v.key = to.clone();
+                        v.key.clone_from(&to);
                         v.timestamp = Local::now().naive_local();
                         db.data.insert(to.clone(), v);
                         db.save()?;
@@ -406,7 +406,7 @@ fn edit_cmd(db: &mut Db, _: &str, args_line: &str) -> std::io::Result<bool> {
                         }
                     }
                     EditCmdOperation::Add(subkey, value) => {
-                        if entry.value.get(&subkey).is_none() {
+                        if !entry.value.contains_key(&subkey) {
                             entry.value.insert(subkey.clone(), value);
                             should_save = true;
                             msg = format!("Added subkey {} for {}", subkey, cmd.key);
