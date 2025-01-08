@@ -3,6 +3,10 @@ name = "cred-man-tui"
 version = "0.1.0"
 edition = "2021"
 
+[[bin]]
+name = "cred-man-tui"
+path = "src/main.rs"
+
 [dependencies]
 clap = { version = "4.5.20", features = ["derive"] }
 cli-clipboard = "0.4.0"
