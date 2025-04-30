@@ -1,17 +1,24 @@
 use std::collections::BTreeMap;
 
+use chrono::Local;
 use cli_clipboard::ClipboardProvider;
+use cred_man_lib::DbRecord;
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout},
     style::{Color, Style},
+    text::{Line, Span},
     widgets::{Block, Borders, List, ListState, Paragraph},
     Frame,
 };
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, AppStateOpened};
 
-use super::EventHandleResult;
+use super::{
+    key_name_edit_view::{self, KeyNameEditMode, KeyNameEditView},
+    subkey_edit_view::{self, SubkeyEditView},
+    EventHandleResult,
+};
 
 pub(crate) struct MainView {
     search: String,
@@ -21,6 +28,13 @@ pub(crate) struct MainView {
     sublist_state: ListState,
     scroll_page_size: usize,
     reveal_data: bool,
+    subview: Option<MainViewSubview>,
+    is_dirty: bool,
+}
+
+enum MainViewSubview {
+    EditingKey(Box<KeyNameEditView>),
+    EditSubkey(Box<SubkeyEditView>),
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -44,6 +58,8 @@ impl MainView {
             scroll_page_size: 1,
             focus: MainViewFocus::Search,
             reveal_data: false,
+            subview: None,
+            is_dirty: false,
         }
     }
 }
@@ -65,17 +81,18 @@ impl MainView {
 
         let focused_block_style = Style::new().fg(Color::Green);
         let default_block_style = Style::new();
-        let search_border_style = if self.focus == MainViewFocus::Search {
+        let search_border_style = if self.subview.is_none() && self.focus == MainViewFocus::Search {
             focused_block_style
         } else {
             default_block_style
         };
-        let list_border_style = if self.focus == MainViewFocus::List {
+        let list_border_style = if self.subview.is_none() && self.focus == MainViewFocus::List {
             focused_block_style
         } else {
             default_block_style
         };
-        let sublist_border_style = if self.focus == MainViewFocus::Sublist {
+        let sublist_border_style = if self.subview.is_none() && self.focus == MainViewFocus::Sublist
+        {
             focused_block_style
         } else {
             default_block_style
@@ -126,26 +143,108 @@ impl MainView {
             &mut self.sublist_state,
         );
 
-        let help = Paragraph::new(match self.focus {
-            MainViewFocus::Search => "<Tab>/<Shift-Tab> switch",
-            MainViewFocus::List => "<Tab>/<Shift-Tab> switch",
-            MainViewFocus::Sublist => {
-                "<Tab>/<Shift-Tab> switch <c> copy to clipboard <v> reveal/hide values"
+        let help: Vec<Span> = match self.focus {
+            MainViewFocus::Search => vec!["<Tab>/<Shift-Tab> switch".into()],
+            MainViewFocus::List => {
+                vec![
+                    "<Tab>/<Shift-Tab> switch <n> new <r> rename <d> delete".into(),
+                    Span::styled(
+                        " <s> save",
+                        Style::default().fg(if self.is_dirty {
+                            Color::Red
+                        } else {
+                            Color::Gray
+                        }),
+                    ),
+                ]
             }
-        });
+            MainViewFocus::Sublist => {
+                vec![
+                    "<Tab>/<Shift-Tab> switch <c> copy to clipboard <v> reveal/hide values <n> new <e> edit <d> del".into(),
+                    Span::styled(
+                        " <s> save",
+                        Style::default().fg(if self.is_dirty {
+                            Color::Red
+                        } else {
+                            Color::Gray
+                        }),
+                    ),
+                ]
+            }
+        };
 
-        frame.render_widget(help, help_area);
+        frame.render_widget(Paragraph::new(Line::from(help)), help_area);
+
+        if let Some(subview) = &mut self.subview {
+            match subview {
+                MainViewSubview::EditingKey(key_name_edit_view) => key_name_edit_view.draw(frame),
+                MainViewSubview::EditSubkey(view) => view.draw(frame),
+            }
+        }
     }
 
     pub(crate) fn handle_event(
         &mut self,
         app_state: &mut AppState,
-        event: Event,
+        event: &Event,
     ) -> EventHandleResult {
-        let app_state = app_state
+        let mut app_state = app_state
             .view()
             .into_opened()
             .expect("main view is active only for opened database");
+
+        if let Some(result) = self.handle_subview_event(&mut app_state, event) {
+            result
+        } else {
+            self.handle_own_event(&mut app_state, event)
+        }
+    }
+
+    fn refresh(
+        &mut self,
+        app_state: &AppStateOpened,
+        selected_key: Option<&str>,
+        selected_attr: Option<&str>,
+    ) {
+        if let Some(selected_key) = selected_key {
+            if !selected_key
+                .to_lowercase()
+                .contains(&self.search.to_lowercase())
+            {
+                self.search = "".into();
+            }
+        }
+        self.search_results = app_state
+            .db()
+            .data
+            .keys()
+            .filter(|s| s.to_lowercase().contains(&self.search.to_lowercase()))
+            .cloned()
+            .collect();
+        let selected_idx = selected_key
+            .and_then(|selected_key| self.search_results.iter().position(|s| *s == selected_key));
+        let selected_main_record =
+            selected_idx.map(|idx| &app_state.db().data[&self.search_results[idx]]);
+        self.list_state
+            .select(selected_idx.or(self.list_state.selected()));
+        if let (Some(main_record), Some(attr)) = (selected_main_record, selected_attr) {
+            let selected_attr_idx = main_record
+                .value
+                .iter()
+                .position(|(key, _value)| key == attr);
+            self.sublist_state.select(selected_attr_idx);
+        } else {
+            self.sublist_state.select_first();
+        }
+    }
+}
+
+impl MainView {
+    fn handle_own_event(
+        &mut self,
+        app_state: &mut AppStateOpened<'_>,
+        event: &Event,
+    ) -> EventHandleResult {
         let Event::Key(key_event) = event else {
             return EventHandleResult::Continue;
         };
@@ -177,7 +276,7 @@ impl MainView {
                     .db()
                     .data
                     .keys()
-                    .filter(|s| s.contains(&self.search))
+                    .filter(|s| s.to_lowercase().contains(&self.search.to_lowercase()))
                     .cloned()
                     .collect();
                 self.list_state.select_first();
@@ -189,7 +288,7 @@ impl MainView {
                     .db()
                     .data
                     .keys()
-                    .filter(|s| s.contains(&self.search))
+                    .filter(|s| s.to_lowercase().contains(&self.search.to_lowercase()))
                     .cloned()
                     .collect();
                 self.list_state.select_first();
@@ -237,6 +336,32 @@ impl MainView {
                 self.list_state.select_last();
                 self.sublist_state.select_first();
             }
+            KeyCode::Char('s') if self.focus == MainViewFocus::List => {
+                app_state.db.save().unwrap();
+                self.is_dirty = false;
+            }
+            KeyCode::Char('n') if self.focus == MainViewFocus::List => {
+                self.subview = Some(MainViewSubview::EditingKey(Box::new(KeyNameEditView::new(
+                    KeyNameEditMode::NewKey,
+                ))));
+            }
+            KeyCode::Char('d') if self.focus == MainViewFocus::List => {
+                if let Some(idx) = self.list_state.selected() {
+                    if let Some(key) = self.search_results.get(idx) {
+                        app_state.db.data.remove(key);
+                        self.refresh(app_state, None, None);
+                        self.is_dirty = true;
+                    }
+                }
+            }
+            KeyCode::Char('r') if self.focus == MainViewFocus::List => {
+                if let Some(idx) = self.list_state.selected() {
+                    let key = self.search_results[idx].clone();
+                    self.subview = Some(MainViewSubview::EditingKey(Box::new(
+                        KeyNameEditView::new(KeyNameEditMode::RenameKey { from_name: key }),
+                    )));
+                }
+            }
             KeyCode::Up if self.focus == MainViewFocus::Sublist => {
                 self.sublist_state.select_previous();
             }
@@ -276,9 +401,156 @@ impl MainView {
             KeyCode::Char('v') if self.focus == MainViewFocus::Sublist => {
                 self.reveal_data = !self.reveal_data;
             }
+            KeyCode::Char('n') if self.focus == MainViewFocus::Sublist => {
+                if let Some(idx) = self.list_state.selected() {
+                    if let Some(key) = self.search_results.get(idx) {
+                        self.subview = Some(MainViewSubview::EditSubkey(Box::new(
+                            SubkeyEditView::new(subkey_edit_view::EditingMode::NewSubkey {
+                                key_name: key.clone(),
+                            }),
+                        )));
+                    }
+                }
+            }
+            KeyCode::Char('d') if self.focus == MainViewFocus::Sublist => {
+                if let Some(selected_key) = self
+                    .list_state
+                    .selected()
+                    .and_then(|idx| self.search_results.get(idx))
+                    .and_then(|key| app_state.db.data.get_mut(key))
+                {
+                    if let Some(sublist_idx) = self.sublist_state.selected() {
+                        if let Some(subkey) = selected_key.value.keys().nth(sublist_idx).cloned() {
+                            selected_key.value.remove(&subkey);
+                        }
+                    }
+                }
+            }
+            KeyCode::Char('e') if self.focus == MainViewFocus::Sublist => {
+                if let Some(selected_key) = self
+                    .list_state
+                    .selected()
+                    .and_then(|idx| self.search_results.get(idx))
+                    .and_then(|key| app_state.db.data.get_mut(key))
+                {
+                    if let Some(sublist_idx) = self.sublist_state.selected() {
+                        if let Some((subkey, value)) = selected_key.value.iter().nth(sublist_idx) {
+                            self.subview = Some(MainViewSubview::EditSubkey(Box::new(
+                                SubkeyEditView::new(subkey_edit_view::EditingMode::EditSubkey {
+                                    key_name: selected_key.key.clone(),
+                                    name: subkey.clone(),
+                                    value: value.clone(),
+                                }),
+                            )));
+                        }
+                    }
+                }
+            }
             _ => {}
         }
 
         EventHandleResult::Continue
+    }
+
+    fn handle_subview_event(
+        &mut self,
+        app_state: &mut AppStateOpened<'_>,
+        event: &Event,
+    ) -> Option<EventHandleResult> {
+        let Some(subview) = &mut self.subview else {
+            return None;
+        };
+        match subview {
+            MainViewSubview::EditingKey(key_name_edit_view) => {
+                match key_name_edit_view.handle_event(event) {
+                    None => {}
+                    Some(key_name_edit_view::EditResult::Cancel) => {
+                        self.subview = None;
+                    }
+                    Some(key_name_edit_view::EditResult::Confirm { mode, name }) => match mode {
+                        key_name_edit_view::KeyNameEditMode::NewKey => {
+                            if app_state.db.data.contains_key(&name) {
+                                key_name_edit_view
+                                    .set_error_message("this key already exists".into());
+                            } else {
+                                app_state.db.data.insert(
+                                    name.clone(),
+                                    DbRecord {
+                                        key: name.clone(),
+                                        timestamp: Local::now().naive_local(),
+                                        value: BTreeMap::new(),
+                                    },
+                                );
+                                self.subview = None;
+                                self.refresh(app_state, Some(&name), None);
+                                self.is_dirty = true;
+                            }
+                        }
+                        key_name_edit_view::KeyNameEditMode::RenameKey { from_name } => {
+                            if app_state.db.data.contains_key(&name) {
+                                key_name_edit_view
+                                    .set_error_message("this key already exists".into());
+                            } else {
+                                let mut db_record = app_state
+                                    .db
+                                    .data
+                                    .remove(&from_name)
+                                    .expect("the key existed before renaming");
+                                db_record.key = name.clone();
+                                app_state.db.data.insert(name.clone(), db_record);
+                                self.subview = None;
+                                self.refresh(app_state, Some(&name), None);
+                                self.is_dirty = true;
+                            }
+                        }
+                    },
+                }
+            }
+            MainViewSubview::EditSubkey(view) => match view.handle_event(event) {
+                None => {}
+                Some(subkey_edit_view::EditResult::Cancel) => {
+                    self.subview = None;
+                }
+                Some(subkey_edit_view::EditResult::Confirm { mode, name, value }) => match mode {
+                    subkey_edit_view::EditingMode::NewSubkey { key_name } => {
+                        let db_record = app_state
+                            .db
+                            .data
+                            .get_mut(&key_name)
+                            .expect("the key existed before editing");
+                        if db_record.value.contains_key(&name) {
+                            view.set_error_message("this attribute already exists".to_string());
+                        } else {
+                            db_record.value.insert(name.clone(), value);
+                            self.subview = None;
+                            self.refresh(app_state, Some(&key_name), Some(&name));
+                            self.is_dirty = true;
+                        }
+                    }
+                    subkey_edit_view::EditingMode::EditSubkey {
+                        key_name,
+                        name: old_name,
+                        value: _old_value,
+                    } => {
+                        let db_record = app_state
+                            .db
+                            .data
+                            .get_mut(&key_name)
+                            .expect("the key existed before editing");
+                        if name != old_name && db_record.value.contains_key(&name) {
+                            view.set_error_message("this attribute already exists".to_string());
+                        } else {
+                            db_record.value.remove(&old_name);
+                            db_record.value.insert(name.clone(), value);
+                            self.subview = None;
+                            self.refresh(app_state, Some(&key_name), Some(&name));
+                            self.is_dirty = true;
+                        }
+                    }
+                },
+            },
+        }
+
+        Some(EventHandleResult::Continue)
     }
 }

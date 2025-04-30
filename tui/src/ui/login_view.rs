@@ -39,7 +39,10 @@ impl LoginView {
         .areas(v_area);
         let view_password: String = "*".repeat(self.password.len());
         let password_line = Line::default().spans([Span::styled(view_password, Style::default())]);
-        let block = Block::new().borders(Borders::ALL).title("Enter password");
+        let block = Block::new()
+            .borders(Borders::ALL)
+            .border_style(Style::default().fg(Color::Green))
+            .title("Enter password");
         let [password_area, message_area] =
             Layout::vertical([Constraint::Length(1), Constraint::Fill(1)]).areas(block.inner(area));
         frame.render_widget(block, area);

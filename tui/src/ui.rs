@@ -7,8 +7,10 @@ use ratatui::{
 
 use crate::app_state::AppState;
 
+mod key_name_edit_view;
 mod login_view;
 mod main_view;
+mod subkey_edit_view;
 
 pub(crate) fn ui_main(app_state: &mut AppState) {
     let terminal = ratatui::init();
@@ -70,7 +72,7 @@ impl AppView {
         }
         match self {
             Self::Login(login_view) => login_view.handle_event(app_state, event),
-            Self::Main(main_view) => main_view.handle_event(app_state, event),
+            Self::Main(main_view) => main_view.handle_event(app_state, &event),
         }
     }
 }
