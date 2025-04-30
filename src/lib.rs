@@ -168,7 +168,7 @@ impl Db {
             Err(e) => {
                 return Err(e);
             }
-        };
+        }
         let mut dto: Vec<DbRecordDTO> = Vec::new();
         for r in self.data.values() {
             dto.push(DbRecordDTO {
