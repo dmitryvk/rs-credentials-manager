@@ -29,6 +29,7 @@ serde_json = { workspace = true }
 
 [workspace.dependencies]
 aes-gcm = "0.10.3"
+anyhow = "1.0.98"
 chrono = "0.4.31"
 cred-man = { path = "." }
 dirs = "5.0.1"

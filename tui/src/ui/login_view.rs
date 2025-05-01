@@ -1,3 +1,4 @@
+use anyhow::Context;
 use ratatui::{
     crossterm::event::{Event, KeyCode, KeyEventKind},
     layout::{Constraint, Layout},
@@ -19,7 +20,7 @@ pub(crate) struct LoginView {
 impl LoginView {
     pub(crate) fn new() -> Self {
         Self {
-            password: "".into(),
+            password: String::new(),
             show_error: false,
         }
     }
@@ -59,30 +60,32 @@ impl LoginView {
     pub(crate) fn handle_event(
         &mut self,
         app_state: &mut AppState,
-        event: Event,
-    ) -> EventHandleResult {
+        event: &Event,
+    ) -> anyhow::Result<EventHandleResult> {
         let mut app_view = app_state
             .view()
             .into_not_opened()
             .expect("when login view is active, state is not opened");
 
         let Event::Key(key_event) = event else {
-            return EventHandleResult::Continue;
+            return Ok(EventHandleResult::Continue);
         };
         if key_event.kind != KeyEventKind::Press {
-            return EventHandleResult::Continue;
+            return Ok(EventHandleResult::Continue);
         }
 
         match key_event.code {
             KeyCode::Enter => {
-                if app_view.open(&self.password).unwrap() {
-                    return EventHandleResult::ChangeView(AppView::Main(MainView::new(app_state)));
-                } else {
-                    self.show_error = true;
+                if app_view.open(&self.password).context("open db")? {
+                    return Ok(EventHandleResult::ChangeView(AppView::Main(MainView::new(
+                        app_state,
+                    ))));
                 }
+
+                self.show_error = true;
             }
             KeyCode::Esc => {
-                return EventHandleResult::Quit;
+                return Ok(EventHandleResult::Quit);
             }
             KeyCode::Char(c) => {
                 self.password.push(c);
@@ -93,6 +96,6 @@ impl LoginView {
             _ => {}
         }
 
-        EventHandleResult::Continue
+        Ok(EventHandleResult::Continue)
     }
 }

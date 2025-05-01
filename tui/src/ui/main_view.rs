@@ -1,5 +1,6 @@
 use std::collections::BTreeMap;
 
+use anyhow::Context;
 use chrono::Local;
 use cli_clipboard::ClipboardProvider;
 use cred_man_lib::DbRecord;
@@ -26,7 +27,7 @@ pub(crate) struct MainView {
     focus: MainViewFocus,
     list_state: ListState,
     sublist_state: ListState,
-    scroll_page_size: usize,
+    scroll_page_size: u16,
     reveal_data: bool,
     subview: Option<MainViewSubview>,
     is_dirty: bool,
@@ -51,7 +52,7 @@ impl MainView {
             .into_opened()
             .expect("main view is active when db is open");
         Self {
-            search: "".into(),
+            search: String::new(),
             search_results: app_view.db().data.keys().cloned().collect(),
             list_state: ListState::default().with_selected(Some(0)),
             sublist_state: ListState::default().with_selected(Some(0)),
@@ -66,6 +67,7 @@ impl MainView {
 
 impl MainView {
     pub(crate) fn draw(&mut self, app_state: &mut AppState, frame: &mut Frame<'_>) {
+        #![allow(clippy::too_many_lines)]
         let app_state = app_state
             .view()
             .into_opened()
@@ -113,7 +115,7 @@ impl MainView {
         let list = List::new(self.search_results.clone())
             .highlight_style(Style::new().bg(Color::Green).fg(Color::Black))
             .highlight_symbol(">");
-        self.scroll_page_size = list_block.inner(list_area).height.saturating_sub(1) as usize;
+        self.scroll_page_size = list_block.inner(list_area).height.saturating_sub(1);
         frame.render_stateful_widget(list.block(list_block), list_area, &mut self.list_state);
 
         let empty_btreemap = BTreeMap::new();
@@ -187,14 +189,14 @@ impl MainView {
         &mut self,
         app_state: &mut AppState,
         event: &Event,
-    ) -> EventHandleResult {
+    ) -> anyhow::Result<EventHandleResult> {
         let mut app_state = app_state
             .view()
             .into_opened()
             .expect("main view is active only for opened database");
 
         if let Some(result) = self.handle_subview_event(&mut app_state, event) {
-            result
+            Ok(result)
         } else {
             self.handle_own_event(&mut app_state, event)
         }
@@ -211,7 +213,7 @@ impl MainView {
                 .to_lowercase()
                 .contains(&self.search.to_lowercase())
             {
-                self.search = "".into();
+                self.search = String::new();
             }
         }
         self.search_results = app_state
@@ -244,17 +246,18 @@ impl MainView {
         &mut self,
         app_state: &mut AppStateOpened<'_>,
         event: &Event,
-    ) -> EventHandleResult {
+    ) -> anyhow::Result<EventHandleResult> {
+        #![allow(clippy::too_many_lines)]
         let Event::Key(key_event) = event else {
-            return EventHandleResult::Continue;
+            return Ok(EventHandleResult::Continue);
         };
         if key_event.kind != KeyEventKind::Press {
-            return EventHandleResult::Continue;
+            return Ok(EventHandleResult::Continue);
         }
 
         match key_event.code {
             KeyCode::Esc => {
-                return EventHandleResult::Quit;
+                return Ok(EventHandleResult::Quit);
             }
             KeyCode::Tab => {
                 self.focus = match self.focus {
@@ -312,14 +315,14 @@ impl MainView {
                 if self.focus == MainViewFocus::Search || self.focus == MainViewFocus::List =>
             {
                 self.focus = MainViewFocus::List;
-                self.list_state.scroll_up_by(self.scroll_page_size as u16);
+                self.list_state.scroll_up_by(self.scroll_page_size);
                 self.sublist_state.select_first();
             }
             KeyCode::PageDown
                 if self.focus == MainViewFocus::Search || self.focus == MainViewFocus::List =>
             {
                 self.focus = MainViewFocus::List;
-                self.list_state.scroll_down_by(self.scroll_page_size as u16);
+                self.list_state.scroll_down_by(self.scroll_page_size);
                 self.sublist_state.select_first();
             }
             KeyCode::Home
@@ -337,7 +340,7 @@ impl MainView {
                 self.sublist_state.select_first();
             }
             KeyCode::Char('s') if self.focus == MainViewFocus::List => {
-                app_state.db.save().unwrap();
+                app_state.db.save().context("save db")?;
                 self.is_dirty = false;
             }
             KeyCode::Char('n') if self.focus == MainViewFocus::List => {
@@ -369,18 +372,16 @@ impl MainView {
                 self.sublist_state.select_next();
             }
             KeyCode::PageUp if self.focus == MainViewFocus::Sublist => {
-                self.sublist_state
-                    .scroll_up_by(self.scroll_page_size as u16);
+                self.sublist_state.scroll_up_by(self.scroll_page_size);
             }
             KeyCode::PageDown if self.focus == MainViewFocus::Sublist => {
-                self.sublist_state
-                    .scroll_down_by(self.scroll_page_size as u16);
+                self.sublist_state.scroll_down_by(self.scroll_page_size);
             }
             KeyCode::Home if self.focus == MainViewFocus::Sublist => {
                 self.sublist_state.select_first();
             }
             KeyCode::End if self.focus == MainViewFocus::Sublist => {
-                self.sublist_state.select_last()
+                self.sublist_state.select_last();
             }
             KeyCode::Char('c') if self.focus == MainViewFocus::Sublist => {
                 if let (Some(list_idx), Some(sublist_idx)) =
@@ -393,7 +394,10 @@ impl MainView {
                         .and_then(|rec| rec.value.iter().nth(sublist_idx))
                     {
                         if let Some(clipboard) = app_state.clipboard {
-                            clipboard.set_contents(value.clone()).unwrap();
+                            clipboard
+                                .set_contents(value.clone())
+                                .map_err(|error| anyhow::anyhow!("{error:?}"))
+                                .context("clipboard copy")?;
                         }
                     }
                 }
@@ -449,7 +453,7 @@ impl MainView {
             _ => {}
         }
 
-        EventHandleResult::Continue
+        Ok(EventHandleResult::Continue)
     }
 
     fn handle_subview_event(
@@ -496,7 +500,8 @@ impl MainView {
                                     .data
                                     .remove(&from_name)
                                     .expect("the key existed before renaming");
-                                db_record.key = name.clone();
+                                db_record.key.clone_from(&name);
+                                db_record.timestamp = Local::now().naive_local();
                                 app_state.db.data.insert(name.clone(), db_record);
                                 self.subview = None;
                                 self.refresh(app_state, Some(&name), None);

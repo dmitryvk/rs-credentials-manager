@@ -30,10 +30,11 @@ use cred_man_lib::DbLocation;
 mod app_state;
 mod ui;
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = CliArgs::parse();
     let mut app_state = AppState::new(args.db_location());
-    ui::ui_main(&mut app_state);
+    ui::ui_main(&mut app_state)?;
+    Ok(())
 }
 
 #[derive(Debug, Parser)]

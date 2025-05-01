@@ -608,7 +608,7 @@ fn list_cmd(db: &mut Db, _: &str, args_line: &str) -> std::io::Result<bool> {
         None => {
             println!("Unrecognized arguments for list; expected: list [recent [count]]");
         }
-    };
+    }
     Ok(true)
 }
 

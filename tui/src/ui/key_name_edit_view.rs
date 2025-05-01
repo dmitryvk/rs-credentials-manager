@@ -28,11 +28,11 @@ impl KeyNameEditView {
     pub(crate) fn new(mode: KeyNameEditMode) -> Self {
         Self {
             name: match &mode {
-                KeyNameEditMode::NewKey => "".into(),
+                KeyNameEditMode::NewKey => String::new(),
                 KeyNameEditMode::RenameKey { from_name } => from_name.clone(),
             },
             mode,
-            error_message: "".into(),
+            error_message: String::new(),
         }
     }
 

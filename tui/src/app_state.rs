@@ -19,7 +19,7 @@ impl AppState {
     pub(crate) fn view(&mut self) -> AppStateView {
         if self.db.is_some() {
             AppStateView::Opened(AppStateOpened {
-                db: self.db.as_mut().unwrap(),
+                db: self.db.as_mut().expect("db.is_some()"),
                 clipboard: &mut self.clipboard,
             })
         } else {

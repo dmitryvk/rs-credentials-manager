@@ -45,17 +45,17 @@ pub(crate) enum EditResult {
 impl SubkeyEditView {
     pub(crate) fn new(mode: EditingMode) -> Self {
         Self {
-            mode: mode.clone(),
             focus: Focus::Name,
             name: match &mode {
-                EditingMode::NewSubkey { .. } => "".to_string(),
+                EditingMode::NewSubkey { .. } => String::new(),
                 EditingMode::EditSubkey { name, .. } => name.clone(),
             },
             value: match &mode {
-                EditingMode::NewSubkey { .. } => "".to_string(),
+                EditingMode::NewSubkey { .. } => String::new(),
                 EditingMode::EditSubkey { value, .. } => value.clone(),
             },
-            error_message: "".to_string(),
+            mode,
+            error_message: String::new(),
         }
     }
 
