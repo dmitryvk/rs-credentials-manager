@@ -6,11 +6,16 @@ members = [
     "tui",
 ]
 
-[package]
-name = "cred-man"
-version = "1.4.0"
+[workspace.package]
+version = "1.4.1"
 authors = ["Dmitry Kalyanov <Kalyanov.Dmitry@gmail.com>"]
 edition = "2021"
+
+[package]
+name = "cred-man"
+version = { workspace = true }
+authors = { workspace = true }
+edition = { workspace = true }
 
 [profile.dev]
 opt-level = 1
