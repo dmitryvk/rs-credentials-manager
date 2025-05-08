@@ -450,6 +450,10 @@ impl MainView {
                     }
                 }
             }
+            KeyCode::Char('s') if self.focus == MainViewFocus::Sublist => {
+                app_state.db.save().context("save db")?;
+                self.is_dirty = false;
+            }
             _ => {}
         }
 
